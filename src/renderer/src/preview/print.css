@@ -1,0 +1,26 @@
+/*
+ * 分页保护规则（全局，预览与打印窗口共用）。
+ * printToPDF 走 Chromium 打印管线，自动应用这些规则：
+ * - 条目尽量整体跨页，不被切断
+ * - 行级兜底：一行文字的行盒整体移动，物理上不可能被水平切半
+ * - 板块标题不孤悬在页尾
+ */
+.section {
+  break-inside: auto;
+}
+
+.section-item {
+  break-inside: avoid;
+}
+
+.line {
+  break-inside: avoid;
+}
+
+.section-title {
+  break-after: avoid;
+}
+
+img {
+  break-inside: avoid;
+}

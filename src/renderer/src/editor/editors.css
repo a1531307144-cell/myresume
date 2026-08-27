@@ -1,0 +1,119 @@
+/* 编辑器表单控件统一样式（前缀 .ed- 避免污染预览模板样式） */
+
+.ed-item-card {
+  background: #fff;
+  border: 1px solid #e6e6ef;
+  border-radius: 8px;
+  padding: 12px;
+  margin-bottom: 10px;
+}
+
+.ed-item-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.ed-item-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: #9a9aae;
+}
+
+.ed-row {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.ed-row:last-child {
+  margin-bottom: 0;
+}
+
+.ed-field {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.ed-field.narrow {
+  flex: 0 0 118px;
+}
+
+.ed-label {
+  font-size: 12px;
+  color: #8b8ba3;
+}
+
+.ed-inp {
+  width: 100%;
+  padding: 6px 10px;
+  border: 1px solid #d9d9e6;
+  border-radius: 6px;
+  font-size: 13px;
+  background: #fff;
+  color: #24242e;
+}
+
+.ed-inp:focus {
+  outline: none;
+  border-color: #667eea;
+  box-shadow: 0 0 0 2px rgba(102, 126, 234, 0.15);
+}
+
+.ed-inp::placeholder {
+  color: #c2c2d2;
+}
+
+textarea.ed-inp {
+  resize: vertical;
+  min-height: 52px;
+  line-height: 1.6;
+}
+
+.ed-btn {
+  border: 1px solid #d9d9e6;
+  background: #fff;
+  border-radius: 6px;
+  font-size: 12px;
+  color: #5c5c74;
+  padding: 4px 10px;
+}
+
+.ed-btn:hover {
+  border-color: #667eea;
+  color: #667eea;
+}
+
+.ed-btn.danger {
+  color: #d9534f;
+}
+
+.ed-btn.danger:hover {
+  border-color: #d9534f;
+  background: #fdf0ef;
+}
+
+.ed-btn.confirm {
+  background: #d9534f;
+  border-color: #d9534f;
+  color: #fff;
+}
+
+.ed-add {
+  width: 100%;
+  padding: 7px;
+  border: 1px dashed #c5c5d8;
+  background: transparent;
+  border-radius: 6px;
+  font-size: 12px;
+  color: #8b8ba3;
+}
+
+.ed-add:hover {
+  border-color: #667eea;
+  color: #667eea;
+}

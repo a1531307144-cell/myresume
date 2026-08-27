@@ -7,6 +7,10 @@ import { contextBridge, ipcRenderer } from 'electron'
 const api = {
   app: {
     getVersion: (): Promise<string> => ipcRenderer.invoke('app:getVersion')
+  },
+  dialog: {
+    /** 返回原图 dataUrl（渲染进程负责压缩），取消返回 null */
+    pickPhoto: (): Promise<{ dataUrl: string } | null> => ipcRenderer.invoke('dialog:pickPhoto')
   }
 }
 

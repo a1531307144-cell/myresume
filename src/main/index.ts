@@ -1,5 +1,6 @@
 import { app, BrowserWindow, shell, ipcMain } from 'electron'
 import { join } from 'path'
+import { registerDialogIpc } from './dialogs'
 
 function createWindow(): void {
   const win = new BrowserWindow({
@@ -39,6 +40,7 @@ function createWindow(): void {
 ipcMain.handle('app:getVersion', () => app.getVersion())
 
 app.whenReady().then(() => {
+  registerDialogIpc()
   createWindow()
 
   app.on('activate', () => {
