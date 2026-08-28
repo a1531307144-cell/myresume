@@ -2,6 +2,7 @@
 import { computed } from 'vue'
 import type { BasicInfoData, ResumeDocument, SectionType } from '@shared/schema'
 import { isSectionEmpty } from '@shared/sectionDefs'
+import { typographyStyle } from '@shared/fonts'
 import LawBasicInfo from './sections/LawBasicInfo.vue'
 import LawEducation from './sections/LawEducation.vue'
 import LawExperience from './sections/LawExperience.vue'
@@ -25,10 +26,11 @@ const basicData = computed<BasicInfoData | null>(() =>
 const showHeader = computed(() => (basicSection.value ? !isSectionEmpty(basicSection.value) : false))
 const filledContacts = computed(() => (basicData.value?.contacts ?? []).filter((c) => c.value.trim()))
 const contentSections = computed(() => props.doc.sections.filter((s) => s.type !== 'basicInfo' && !isSectionEmpty(s)))
+const pageStyle = computed(() => typographyStyle(props.doc))
 </script>
 
 <template>
-  <div class="resume-page tpl-law">
+  <div class="resume-page tpl-law" :style="pageStyle">
     <header v-if="showHeader && basicData" class="law-header">
       <div class="law-title-block">
         <h1 class="law-name">{{ basicData.name }}</h1>
@@ -49,7 +51,7 @@ const contentSections = computed(() => props.doc.sections.filter((s) => s.type !
 <style scoped>
 .tpl-law {
   font-family: 'SimSun', '宋体', 'Songti SC', serif;
-  font-size: 12px;
+  font-size: 14px;
   line-height: 1.75;
   color: #000;
   background: #fff;
@@ -71,18 +73,18 @@ const contentSections = computed(() => props.doc.sections.filter((s) => s.type !
 
 .law-name {
   font-family: 'SimHei', '黑体', 'Microsoft YaHei', sans-serif;
-  font-size: 26px;
+  font-size: 1.9em;
   font-weight: 700;
   margin: 0;
-  letter-spacing: 2px;
+  letter-spacing: 0.08em;
 }
 
 .law-contacts {
-  margin: 12px 0 0;
+  margin: 0.85em 0 0;
   display: flex;
   flex-wrap: wrap;
-  gap: 2px 20px;
-  font-size: 12px;
+  gap: 0.15em 1.5em;
+  font-size: 0.95em;
 }
 
 .law-photo {
@@ -95,15 +97,15 @@ const contentSections = computed(() => props.doc.sections.filter((s) => s.type !
 }
 
 .section {
-  margin-top: 18px;
+  margin-top: 1.2em;
 }
 
 .section-title {
   font-family: 'SimHei', '黑体', 'Microsoft YaHei', sans-serif;
-  font-size: 15px;
+  font-size: 1.15em;
   font-weight: 700;
   border-bottom: 1.5px solid #000;
-  padding-bottom: 3px;
-  margin: 0 0 8px;
+  padding-bottom: 0.2em;
+  margin: 0 0 0.55em;
 }
 </style>

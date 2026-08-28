@@ -23,7 +23,7 @@ const data = computed(() => props.section.data as ExperienceData)
 
 <style scoped>
 .exp-item {
-  margin-bottom: 10px;
+  margin-bottom: 0.7em;
 }
 
 .exp-item:last-child {

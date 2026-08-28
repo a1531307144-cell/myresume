@@ -15,7 +15,7 @@ const paragraphs = computed(() => data.value.paragraphs.filter((p) => p.trim()))
 
 <style scoped>
 .paragraph {
-  margin: 0 0 6px;
+  margin: 0 0 0.45em;
   text-align: justify;
 }
 

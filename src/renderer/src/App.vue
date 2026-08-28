@@ -7,6 +7,7 @@ import EditorPanel from './editor/EditorPanel.vue'
 import PreviewPane from './preview/PreviewPane.vue'
 import ConfirmModal from './fileUI/ConfirmModal.vue'
 import SaveStatus from './fileUI/SaveStatus.vue'
+import TypographyPanel from './fileUI/TypographyPanel.vue'
 import {
   exportPdfAction,
   exporting,
@@ -58,6 +59,8 @@ function onTemplateChange(e: Event): void {
             {{ t.name }}{{ t.available ? '' : '（即将上线）' }}
           </option>
         </select>
+
+        <TypographyPanel />
 
         <button class="tb-btn export" :disabled="exporting.busy" @click="exportPdfAction()">
           {{ exporting.busy ? '导出中…' : '导出 PDF' }}

@@ -71,8 +71,19 @@ export interface Section {
   data: SectionData
 }
 
+/** 排版个性化设置：全部可选，未设置时用模板默认值 */
+export interface Typography {
+  /** shared/fonts.ts 中 FONT_OPTIONS 的 id */
+  fontFamily?: string
+  /** 正文字号 px（12–16） */
+  fontSize?: number
+  /** 行距（1.4–2.0） */
+  lineHeight?: number
+}
+
 export interface ResumeMeta {
   template: TemplateId
+  typography?: Typography
 }
 
 export interface ResumeDocument {

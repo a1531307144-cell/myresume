@@ -21,7 +21,7 @@ const data = computed(() => props.section.data as EducationData)
 
 <style scoped>
 .edu-item {
-  margin-bottom: 8px;
+  margin-bottom: 0.55em;
 }
 
 .edu-item:last-child {

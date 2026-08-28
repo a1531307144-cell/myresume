@@ -20,7 +20,7 @@ const entries = computed(() => data.value.entries.filter((e) => e.text.trim() ||
 
 <style scoped>
 .list-entry {
-  margin-bottom: 4px;
+  margin-bottom: 0.3em;
 }
 
 .label {
