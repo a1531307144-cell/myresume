@@ -207,6 +207,7 @@ export function handleMenuAction(action: MenuAction): void {
       if (ok || !store.dirty) await window.myresume.app.closeWindow()
     })()
   } else if (action === 'about') void aboutAction()
+  else if (action === 'check-updates') void window.myresume.update.check()
   else if (typeof action === 'object' && action.type === 'open-recent') void openRecentAction(action.path)
 }
 

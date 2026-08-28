@@ -58,7 +58,10 @@ export async function buildAppMenu(): Promise<void> {
     },
     {
       label: '帮助',
-      submenu: [{ label: '关于「我的简历」', click: () => sendAction('about') }]
+      submenu: [
+        { label: '检查更新…', click: () => sendAction('check-updates') },
+        { label: '关于「我的简历」', click: () => sendAction('about') }
+      ]
     }
   ]
 

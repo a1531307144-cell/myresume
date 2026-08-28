@@ -9,7 +9,16 @@ export type MenuAction =
   | 'save-as-doc'
   | 'save-and-close'
   | 'about'
+  | 'check-updates'
   | { type: 'open-recent'; path: string }
+
+export type UpdateStatus =
+  | { type: 'checking' }
+  | { type: 'available'; version: string }
+  | { type: 'not-available'; manual: boolean }
+  | { type: 'downloading'; percent: number }
+  | { type: 'downloaded'; version: string }
+  | { type: 'error'; manual: boolean }
 
 export interface OpenResult {
   canceled?: boolean

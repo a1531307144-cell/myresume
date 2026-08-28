@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer } from 'electron'
-import type { MenuAction, OpenResult, PdfResult, PrintPayload, RecentItem, SaveResult } from '../shared/ipc'
+import type { MenuAction, OpenResult, PdfResult, PrintPayload, RecentItem, SaveResult, UpdateStatus } from '../shared/ipc'
 import type { ResumeDocument } from '../shared/schema'
 
 /**
@@ -38,6 +38,13 @@ const api = {
     },
     /** 打印窗口专用：渲染就绪回执（等字体与图片加载完） */
     ready: (): Promise<void> => ipcRenderer.invoke('print:ready')
+  },
+  update: {
+    check: (): Promise<void> => ipcRenderer.invoke('update:check'),
+    install: (): Promise<void> => ipcRenderer.invoke('update:install'),
+    onStatus: (cb: (status: UpdateStatus) => void): void => {
+      ipcRenderer.on('update:status', (_e, status: UpdateStatus) => cb(status))
+    }
   },
   menu: {
     /** 原生菜单动作转发 */

@@ -4,6 +4,7 @@ import { registerDialogIpc } from './dialogs'
 import { buildAppMenu, watchMenuRebuild } from './menu'
 import { initFileService, isSessionDirty, registerFileIpc } from './fileService'
 import { registerPdfIpc } from './pdfExporter'
+import { setupUpdater } from './updater'
 
 function createWindow(): void {
   const win = new BrowserWindow({
@@ -84,6 +85,7 @@ app.whenReady().then(() => {
     watchMenuRebuild()
   })
   createWindow()
+  setupUpdater()
 
   app.on('activate', () => {
     // macOS 点击 Dock 图标时若无窗口则重建
