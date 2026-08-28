@@ -9,17 +9,21 @@ import ConfirmModal from './fileUI/ConfirmModal.vue'
 import SaveStatus from './fileUI/SaveStatus.vue'
 import StartPage from './fileUI/StartPage.vue'
 import TypographyPanel from './fileUI/TypographyPanel.vue'
+import AiModelButton from './fileUI/AiModelButton.vue'
 import ImportDialog from './fileUI/ImportDialog.vue'
+import SettingsDialog from './fileUI/SettingsDialog.vue'
 import UpdateToast from './updaterUI/UpdateToast.vue'
 import {
   exportPdfAction,
   exporting,
   handleMenuAction,
+  homeAction,
   importUI,
   initFileUI,
   newDocAction,
   openDocAction,
   saveDoc,
+  settingsUI,
   startView,
   toast
 } from './fileUI/useFileActions'
@@ -53,6 +57,7 @@ function onTemplateChange(e: Event): void {
       </div>
 
       <div class="file-btns">
+        <button class="tb-btn" @click="homeAction()">首页</button>
         <button class="tb-btn" @click="newDocAction()">新建</button>
         <button class="tb-btn" @click="openDocAction()">打开</button>
         <button class="tb-btn" :class="{ disabled: !store.dirty }" @click="saveDoc()">保存</button>
@@ -60,6 +65,8 @@ function onTemplateChange(e: Event): void {
       </div>
 
       <div class="topbar-right">
+        <AiModelButton />
+
         <label class="tpl-label">模板</label>
         <select class="tpl-select" :value="store.doc.meta.template" @change="onTemplateChange">
           <option v-for="t in templateOptions" :key="t.id" :value="t.id" :disabled="!t.available">
@@ -90,6 +97,7 @@ function onTemplateChange(e: Event): void {
   <!-- 弹窗与提示条全局可用（含起始页） -->
   <ConfirmModal />
   <ImportDialog v-if="importUI.open" />
+  <SettingsDialog v-if="settingsUI.open" @close="settingsUI.open = false" />
   <UpdateToast />
 
   <transition name="toast">

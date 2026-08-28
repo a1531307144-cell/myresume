@@ -99,3 +99,8 @@ export interface AiParseResult {
   parsed?: ParsedResume
   profileName?: string
 }
+
+/** AI 流式生成进度（已接收字符数） */
+export interface AiProgress {
+  chars: number
+}

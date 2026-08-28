@@ -1,10 +1,15 @@
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import type { RecentItem } from '@shared/ipc'
-import { importDocAction, openDocAction, openRecentAction, startWithTemplate } from './useFileActions'
+import { isSectionEmpty } from '@shared/sectionDefs'
+import { store } from '@renderer/stores/resume'
+import { backToEditorAction, importDocAction, openDocAction, openRecentAction, startWithTemplate } from './useFileActions'
 
 const recent = ref<RecentItem[]>([])
 const version = ref('')
+
+/** 当前内存里有实质内容时，首页提供「返回当前简历」 */
+const hasOpenDoc = computed(() => !store.doc.sections.every((s) => isSectionEmpty(s)))
 
 onMounted(async () => {
   try {
@@ -32,6 +37,8 @@ function fmtDate(iso: string): string {
         <h1 class="start-title">我的简历</h1>
       </div>
       <p class="start-sub">选择一个模板开始——之后可以随时切换，数据不会变</p>
+
+      <button v-if="hasOpenDoc" class="back-btn" @click="backToEditorAction()">← 返回正在编辑的简历</button>
 
       <div class="start-cards">
         <button class="start-card" @click="startWithTemplate('law-classic')">
@@ -131,6 +138,22 @@ function fmtDate(iso: string): string {
   margin: 14px 0 0;
   font-size: 14px;
   color: #8b8ba3;
+}
+
+.back-btn {
+  margin-top: 18px;
+  padding: 8px 20px;
+  border: 1px solid #667eea;
+  border-radius: 8px;
+  background: #fff;
+  color: #667eea;
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.back-btn:hover {
+  background: #667eea;
+  color: #fff;
 }
 
 .start-cards {

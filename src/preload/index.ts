@@ -3,6 +3,7 @@ import type {
   AiConfigView,
   AiParseResult,
   AiProfilePatch,
+  AiProgress,
   MenuAction,
   OpenResult,
   PdfResult,
@@ -42,7 +43,11 @@ const api = {
       ipcRenderer.invoke('ai:test', probe),
     /** 纯文本 → 主进程代理 AI 解析 → 校验后的结构化结果；profileId 缺省用常用档案 */
     parse: (text: string, profileId?: string): Promise<AiParseResult> => ipcRenderer.invoke('ai:parse', { text, profileId }),
-    cancel: (): Promise<void> => ipcRenderer.invoke('ai:cancel')
+    cancel: (): Promise<void> => ipcRenderer.invoke('ai:cancel'),
+    /** 流式生成进度（已接收字符数） */
+    onProgress: (cb: (progress: AiProgress) => void): void => {
+      ipcRenderer.on('ai:progress', (_e, progress: AiProgress) => cb(progress))
+    }
   },
   file: {
     newSession: (): Promise<void> => ipcRenderer.invoke('file:new'),

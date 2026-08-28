@@ -2,6 +2,7 @@ import { reactive } from 'vue'
 import type { MenuAction } from '@shared/ipc'
 import type { ResumeDocument, TemplateId } from '@shared/schema'
 import { createDefaultDocument } from '@shared/defaults'
+import { isSectionEmpty } from '@shared/sectionDefs'
 import { replaceDoc, store } from '@renderer/stores/resume'
 
 /** 文件操作流程层：确认弹窗、菜单动作、保存/打开/导出协调（渲染侧唯一入口） */
@@ -243,17 +244,42 @@ export async function finishImport(doc: ResumeDocument): Promise<void> {
   showToast(`导入完成：${contentSections.length} 个板块 / ${itemCount} 条内容——请逐项检查修正`)
 }
 
-// ———————————————— 首启起始页 ————————————————
+// ———————————————— 首页（起始页）与 AI 设置 ————————————————
 
 export const startView = reactive({ visible: true })
+export const settingsUI = reactive({ open: false })
 
-/** 从起始页选择模板开始空白简历（记住选择，下次启动默认用它） */
-export function startWithTemplate(id: TemplateId): void {
-  store.doc.meta.template = id
+/** 从编辑器返回首页（当前文档保留在内存，可随时回来） */
+export function homeAction(): void {
+  startView.visible = true
+}
+
+/** 从首页回到正在编辑的简历 */
+export function backToEditorAction(): void {
+  startView.visible = false
+}
+
+/** 从首页选择模板：当前文档为空→直接套模板进入；已有内容→走「新建」保护流程 */
+export async function startWithTemplate(id: TemplateId): Promise<void> {
   try {
     localStorage.setItem('myresume.lastTemplate', id)
   } catch {
     /* 忽略存储失败 */
   }
+  const isEmpty = store.doc.sections.every((s) => isSectionEmpty(s))
+  if (isEmpty) {
+    store.doc.meta.template = id
+    startView.visible = false
+    return
+  }
+  const choice = await confirmGuard()
+  if (choice === 'cancel') return
+  if (choice === 'save') {
+    const ok = await saveDoc()
+    if (!ok) return
+  }
+  await window.myresume.file.newSession()
+  await replaceDoc(createDefaultDocument(id), null, null)
   startView.visible = false
+  showToast(`已用「${id === 'law-classic' ? '法学正式风' : '通用简约风'}」新建空白简历`)
 }

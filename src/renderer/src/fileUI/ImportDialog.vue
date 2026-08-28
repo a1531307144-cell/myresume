@@ -1,11 +1,10 @@
 <script setup lang="ts">
-import { onBeforeUnmount, ref } from 'vue'
+import { onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import type { AiProfileView } from '@shared/ipc'
 import { buildDocument, parseResumeText } from '@shared/importer'
 import { extractText } from '@renderer/importerClient/extract'
 import { store } from '@renderer/stores/resume'
-import { importUI, finishImport, modalApi } from './useFileActions'
-import SettingsDialog from './SettingsDialog.vue'
+import { importUI, finishImport, modalApi, settingsUI } from './useFileActions'
 
 type Step = 'choose' | 'extracting' | 'ready' | 'importing'
 
@@ -14,13 +13,27 @@ const fileName = ref('')
 const charCount = ref(0)
 const text = ref('')
 const error = ref('')
-const showSettings = ref(false)
 const aiReady = ref<boolean | null>(null) // null=未检查
 const profiles = ref<AiProfileView[]>([])
 const selectedProfileId = ref('')
 const parseMode = ref<'' | 'local' | 'ai'>('')
 const elapsed = ref(0)
+const aiChars = ref(0)
 let elapsedTimer: ReturnType<typeof setInterval> | undefined
+
+// 设置窗口关闭后刷新模型状态
+watch(
+  () => settingsUI.open,
+  (open) => {
+    if (!open && step.value === 'ready') void checkAi()
+  }
+)
+
+onMounted(() => {
+  window.myresume.ai.onProgress((p) => {
+    aiChars.value = p.chars
+  })
+})
 
 function startTimer(): void {
   elapsed.value = 0
@@ -100,10 +113,11 @@ function parseLocal(): void {
   }
 }
 
-/** AI 解析（可选，更准；主进程代理请求，可取消） */
+/** AI 解析（可选，更准；主进程代理流式请求，实时进度可取消） */
 async function parseAi(): Promise<void> {
   step.value = 'importing'
   parseMode.value = 'ai'
+  aiChars.value = 0
   startTimer()
   try {
     const r = await window.myresume.ai.parse(text.value, selectedProfileId.value || undefined)
@@ -169,7 +183,7 @@ function toast(msg: string): void {
             <span class="opt-sub">离线 · 快速 · 适合格式规整的简历</span>
           </button>
           <div class="opt ai-opt" :class="{ disabled: aiReady === false }">
-            <button class="ai-run" @click="aiReady ? parseAi() : ((showSettings = true), toast('先添加模型并填写 Key 再使用'))">
+            <button class="ai-run" @click="aiReady ? parseAi() : ((settingsUI.open = true), toast('先添加模型并填写 Key 再使用'))">
               <span class="opt-title">AI 智能解析<span class="badge">推荐</span></span>
               <span class="opt-sub">{{ aiReady === false ? '未配置——点击添加模型（需自备 API Key）' : '更准确 · 需联网 · 内容仅发送到你选择的接口' }}</span>
             </button>
@@ -183,15 +197,18 @@ function toast(msg: string): void {
             </div>
           </div>
         </div>
-        <button class="link-btn" @click="showSettings = true">AI 模型管理…</button>
+        <button class="link-btn" @click="settingsUI.open = true">AI 模型管理…</button>
       </template>
 
       <template v-else-if="step === 'importing'">
         <p class="desc">
-          正在解析… 已用时 {{ elapsed }} 秒
-          <template v-if="parseMode === 'ai'">（使用 {{ selectedProfileName() }}）</template>
+          <template v-if="parseMode === 'ai'">
+            {{ selectedProfileName() }} 正在解析… 已生成 <b>{{ aiChars }}</b> 字 · {{ elapsed }} 秒
+          </template>
+          <template v-else>正在解析… {{ elapsed }} 秒</template>
         </p>
-        <div class="spinner"></div>
+        <div v-if="parseMode === 'ai'" class="stream-bar"><div class="stream-fill"></div></div>
+        <div v-else class="spinner"></div>
         <button v-if="parseMode === 'ai'" class="cancel-parse" @click="cancelParse">取消解析</button>
       </template>
 
@@ -203,8 +220,6 @@ function toast(msg: string): void {
         </button>
       </div>
     </div>
-
-    <SettingsDialog v-if="showSettings" @close="((showSettings = false), void checkAi())" />
   </div>
 </template>
 
@@ -371,6 +386,35 @@ function toast(msg: string): void {
 .cancel-parse:hover {
   border-color: #d9534f;
   color: #d9534f;
+}
+
+/* 流式生成中的动态进度条（长度未知，用流动光带表达"进行中"） */
+.stream-bar {
+  position: relative;
+  height: 6px;
+  border-radius: 3px;
+  background: #ececf3;
+  overflow: hidden;
+  margin: 16px 0 4px;
+}
+
+.stream-fill {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 40%;
+  border-radius: 3px;
+  background: linear-gradient(90deg, #667eea, #9b8ae0, #667eea);
+  animation: stream-slide 1.2s ease-in-out infinite;
+}
+
+@keyframes stream-slide {
+  0% {
+    left: -40%;
+  }
+  100% {
+    left: 100%;
+  }
 }
 
 .error {
