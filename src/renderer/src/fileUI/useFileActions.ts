@@ -229,12 +229,18 @@ export async function importDocAction(): Promise<void> {
   importUI.open = true
 }
 
-/** 导入完成：换入新文档并进入编辑器 */
+/** 导入完成：换入新文档并进入编辑器（提示解析统计，引导检查） */
 export async function finishImport(doc: ResumeDocument): Promise<void> {
   await replaceDoc(doc, null, null)
   importUI.open = false
   startView.visible = false
-  showToast('导入完成——请逐板块检查内容是否正确')
+  const contentSections = doc.sections.filter((s) => s.type !== 'basicInfo')
+  let itemCount = 0
+  for (const s of contentSections) {
+    const d = s.data as { items?: unknown[]; entries?: unknown[]; paragraphs?: unknown[] }
+    itemCount += d.items?.length ?? d.entries?.length ?? d.paragraphs?.length ?? 0
+  }
+  showToast(`导入完成：${contentSections.length} 个板块 / ${itemCount} 条内容——请逐项检查修正`)
 }
 
 // ———————————————— 首启起始页 ————————————————

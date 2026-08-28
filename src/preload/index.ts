@@ -1,8 +1,8 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import type {
-  AiConfig,
   AiConfigView,
   AiParseResult,
+  AiProfilePatch,
   MenuAction,
   OpenResult,
   PdfResult,
@@ -31,11 +31,18 @@ const api = {
   },
   ai: {
     getConfig: (): Promise<AiConfigView> => ipcRenderer.invoke('ai:getConfig'),
-    setConfig: (patch: { baseUrl?: string; model?: string; apiKey?: string | null }): Promise<void> =>
-      ipcRenderer.invoke('ai:setConfig', patch),
-    test: (): Promise<{ ok: boolean; error?: string }> => ipcRenderer.invoke('ai:test'),
-    /** 纯文本 → 主进程代理 AI 解析 → 校验后的结构化结果 */
-    parse: (text: string): Promise<AiParseResult> => ipcRenderer.invoke('ai:parse', { text })
+    /** 新增/更新模型档案；apiKey 留空=保留原值，null=清除 */
+    saveProfile: (
+      patch: AiProfilePatch
+    ): Promise<{ ok: boolean; error?: string; id?: string }> => ipcRenderer.invoke('ai:saveProfile', patch),
+    deleteProfile: (id: string): Promise<void> => ipcRenderer.invoke('ai:deleteProfile', id),
+    setActive: (id: string): Promise<void> => ipcRenderer.invoke('ai:setActive', id),
+    /** 测试连接（可传未保存的表单；apiKey 留空用已存 Key） */
+    test: (probe: { id?: string; baseUrl?: string; model?: string; apiKey?: string }): Promise<{ ok: boolean; error?: string }> =>
+      ipcRenderer.invoke('ai:test', probe),
+    /** 纯文本 → 主进程代理 AI 解析 → 校验后的结构化结果；profileId 缺省用常用档案 */
+    parse: (text: string, profileId?: string): Promise<AiParseResult> => ipcRenderer.invoke('ai:parse', { text, profileId }),
+    cancel: (): Promise<void> => ipcRenderer.invoke('ai:cancel')
   },
   file: {
     newSession: (): Promise<void> => ipcRenderer.invoke('file:new'),

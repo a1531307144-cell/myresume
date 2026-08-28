@@ -60,22 +60,42 @@ export interface PickedImportFile {
   dataBase64: string
 }
 
-/** 用户自备的 AI 服务配置（OpenAI 兼容格式）；apiKey 只存本机 userData */
-export interface AiConfig {
+/** 用户自备的 AI 服务配置（OpenAI 兼容格式）；apiKey 只存本机 userData，永不出主进程 */
+export interface AiProfile {
+  id: string
+  name: string
   baseUrl: string
   model: string
   apiKey: string
 }
 
-export interface AiConfigView {
+/** 渲染层可见的模型配置（Key 只有掩码） */
+export interface AiProfileView {
+  id: string
+  name: string
   baseUrl: string
   model: string
   hasKey: boolean
   keyMasked: string
 }
 
+export interface AiConfigView {
+  profiles: AiProfileView[]
+  activeId: string
+}
+
+/** 保存模型配置的补丁：apiKey 为空=保留原值，null=清除 */
+export interface AiProfilePatch {
+  id?: string
+  name: string
+  baseUrl: string
+  model: string
+  apiKey?: string | null
+}
+
 export interface AiParseResult {
   ok: boolean
   error?: string
   parsed?: ParsedResume
+  profileName?: string
 }

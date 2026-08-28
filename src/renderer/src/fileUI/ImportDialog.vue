@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { onBeforeUnmount, ref } from 'vue'
+import type { AiProfileView } from '@shared/ipc'
 import { buildDocument, parseResumeText } from '@shared/importer'
 import { extractText } from '@renderer/importerClient/extract'
 import { store } from '@renderer/stores/resume'
@@ -15,6 +16,28 @@ const text = ref('')
 const error = ref('')
 const showSettings = ref(false)
 const aiReady = ref<boolean | null>(null) // null=未检查
+const profiles = ref<AiProfileView[]>([])
+const selectedProfileId = ref('')
+const parseMode = ref<'' | 'local' | 'ai'>('')
+const elapsed = ref(0)
+let elapsedTimer: ReturnType<typeof setInterval> | undefined
+
+function startTimer(): void {
+  elapsed.value = 0
+  stopTimer()
+  elapsedTimer = setInterval(() => {
+    elapsed.value += 1
+  }, 1000)
+}
+
+function stopTimer(): void {
+  if (elapsedTimer) {
+    clearInterval(elapsedTimer)
+    elapsedTimer = undefined
+  }
+}
+
+onBeforeUnmount(stopTimer)
 
 async function pick(): Promise<void> {
   error.value = ''
@@ -48,7 +71,13 @@ async function pick(): Promise<void> {
 async function checkAi(): Promise<void> {
   try {
     const c = await window.myresume.ai.getConfig()
-    aiReady.value = Boolean(c.baseUrl && c.model && c.hasKey)
+    profiles.value = c.profiles
+    const withKey = c.profiles.filter((p) => p.hasKey)
+    aiReady.value = withKey.length > 0
+    // 默认选「常用」，无 Key 则选第一个有 Key 的
+    const active = c.profiles.find((p) => p.id === c.activeId)
+    selectedProfileId.value =
+      active && active.hasKey ? active.id : (withKey[0]?.id ?? c.activeId ?? c.profiles[0]?.id ?? '')
   } catch {
     aiReady.value = false
   }
@@ -57,29 +86,49 @@ async function checkAi(): Promise<void> {
 /** 本地启发式解析（离线） */
 function parseLocal(): void {
   step.value = 'importing'
+  parseMode.value = 'local'
+  startTimer()
   try {
     const parsed = parseResumeText(text.value, fileName.value)
-    void finishImport(buildDocument(parsed, storeTemplate()))
+    void finishImport(buildDocument(parsed, store.doc.meta.template))
   } catch (e) {
     error.value = e instanceof Error ? e.message : '解析失败'
     step.value = 'ready'
+  } finally {
+    stopTimer()
+    parseMode.value = ''
   }
 }
 
-/** AI 解析（可选，更准；主进程代理请求） */
+/** AI 解析（可选，更准；主进程代理请求，可取消） */
 async function parseAi(): Promise<void> {
   step.value = 'importing'
+  parseMode.value = 'ai'
+  startTimer()
   try {
-    const r = await window.myresume.ai.parse(text.value)
+    const r = await window.myresume.ai.parse(text.value, selectedProfileId.value || undefined)
     if (r.ok && r.parsed) {
       void finishImport(buildDocument(r.parsed, store.doc.meta.template))
+      return
+    }
+    if (r.error === '__CANCELLED__') {
+      error.value = ''
     } else {
       error.value = r.error ?? 'AI 解析失败'
-      step.value = 'ready'
     }
+    step.value = 'ready'
   } catch {
     error.value = 'AI 解析失败，请稍后重试'
     step.value = 'ready'
+  } finally {
+    stopTimer()
+    parseMode.value = ''
+  }
+}
+
+function cancelParse(): void {
+  if (parseMode.value === 'ai') {
+    void window.myresume.ai.cancel()
   }
 }
 
@@ -119,17 +168,31 @@ function toast(msg: string): void {
             <span class="opt-title">本地智能解析</span>
             <span class="opt-sub">离线 · 快速 · 适合格式规整的简历</span>
           </button>
-          <button class="opt" :class="{ disabled: aiReady === false }" @click="aiReady ? parseAi() : ((showSettings = true), toast('先完成 AI 配置再使用'))">
-            <span class="opt-title">AI 智能解析<span class="badge">推荐</span></span>
-            <span class="opt-sub">{{ aiReady === false ? '未配置——点击进行设置（需自备 API Key）' : '更准确 · 需联网 · 内容仅发送到你配置的接口' }}</span>
-          </button>
+          <div class="opt ai-opt" :class="{ disabled: aiReady === false }">
+            <button class="ai-run" @click="aiReady ? parseAi() : ((showSettings = true), toast('先添加模型并填写 Key 再使用'))">
+              <span class="opt-title">AI 智能解析<span class="badge">推荐</span></span>
+              <span class="opt-sub">{{ aiReady === false ? '未配置——点击添加模型（需自备 API Key）' : '更准确 · 需联网 · 内容仅发送到你选择的接口' }}</span>
+            </button>
+            <div v-if="profiles.length > 0" class="ai-model-row">
+              <span class="ai-model-label">模型</span>
+              <select v-model="selectedProfileId" class="ai-model-select" @click.stop>
+                <option v-for="p in profiles" :key="p.id" :value="p.id">
+                  {{ p.name }}{{ p.hasKey ? '' : '（未填 Key）' }}
+                </option>
+              </select>
+            </div>
+          </div>
         </div>
-        <button class="link-btn" @click="showSettings = true">AI 服务设置…</button>
+        <button class="link-btn" @click="showSettings = true">AI 模型管理…</button>
       </template>
 
       <template v-else-if="step === 'importing'">
-        <p class="desc">正在解析…</p>
+        <p class="desc">
+          正在解析… 已用时 {{ elapsed }} 秒
+          <template v-if="parseMode === 'ai'">（使用 {{ selectedProfileName() }}）</template>
+        </p>
         <div class="spinner"></div>
+        <button v-if="parseMode === 'ai'" class="cancel-parse" @click="cancelParse">取消解析</button>
       </template>
 
       <p v-if="error" class="error">{{ error }}</p>
@@ -251,6 +314,63 @@ function toast(msg: string): void {
   background: transparent;
   font-size: 12px;
   color: #667eea;
+}
+
+.ai-opt {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  cursor: default;
+}
+
+.ai-run {
+  text-align: left;
+  border: none;
+  background: transparent;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.ai-model-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border-top: 1px solid #f0f0f6;
+  padding-top: 8px;
+}
+
+.ai-model-label {
+  font-size: 12px;
+  color: #8b8ba3;
+  flex-shrink: 0;
+}
+
+.ai-model-select {
+  flex: 1;
+  padding: 4px 8px;
+  border: 1px solid #d9d9e6;
+  border-radius: 6px;
+  font-size: 12px;
+  background: #fff;
+  outline: none;
+}
+
+.cancel-parse {
+  display: block;
+  margin: 14px auto 0;
+  padding: 6px 16px;
+  border: 1px solid #dcdce8;
+  border-radius: 7px;
+  background: #fff;
+  font-size: 12px;
+  color: #5c5c74;
+}
+
+.cancel-parse:hover {
+  border-color: #d9534f;
+  color: #d9534f;
 }
 
 .error {
