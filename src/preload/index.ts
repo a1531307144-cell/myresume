@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer } from 'electron'
-import type { MenuAction, OpenResult, PdfResult, PrintPayload, SaveResult } from '../shared/ipc'
+import type { MenuAction, OpenResult, PdfResult, PrintPayload, RecentItem, SaveResult } from '../shared/ipc'
 import type { ResumeDocument } from '../shared/schema'
 
 /**
@@ -19,6 +19,7 @@ const api = {
     newSession: (): Promise<void> => ipcRenderer.invoke('file:new'),
     open: (): Promise<OpenResult> => ipcRenderer.invoke('file:open'),
     openRecent: (path: string): Promise<OpenResult> => ipcRenderer.invoke('file:openRecent', path),
+    getRecent: (): Promise<RecentItem[]> => ipcRenderer.invoke('file:getRecent'),
     save: (doc: ResumeDocument): Promise<SaveResult> => ipcRenderer.invoke('file:save', doc),
     saveAs: (doc: ResumeDocument): Promise<SaveResult> => ipcRenderer.invoke('file:saveAs', doc),
     setDirty: (v: boolean): Promise<void> => ipcRenderer.invoke('file:set-dirty', v),

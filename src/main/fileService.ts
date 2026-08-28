@@ -175,6 +175,8 @@ export function registerFileIpc(): void {
     return openPath(path)
   })
 
+  ipcMain.handle('file:getRecent', () => recentCache)
+
   ipcMain.handle('file:save', (_e, doc: ResumeDocument) => {
     // 渲染进程保证有路径时才调 save；无路径兜底返回错误
     if (!session.filePath) {

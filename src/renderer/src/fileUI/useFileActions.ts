@@ -1,6 +1,6 @@
 import { reactive } from 'vue'
 import type { MenuAction } from '@shared/ipc'
-import type { ResumeDocument } from '@shared/schema'
+import type { ResumeDocument, TemplateId } from '@shared/schema'
 import { createDefaultDocument } from '@shared/defaults'
 import { replaceDoc, store } from '@renderer/stores/resume'
 
@@ -107,6 +107,7 @@ export async function newDocAction(): Promise<void> {
   }
   await window.myresume.file.newSession()
   await replaceDoc(createDefaultDocument(store.doc.meta.template), null, null)
+  startView.visible = false
   showToast('已新建空白简历')
 }
 
@@ -117,6 +118,7 @@ async function openFrom(result: Awaited<ReturnType<typeof window.myresume.file.o
     return
   }
   await replaceDoc(result.doc!, result.path!, result.name!)
+  startView.visible = false
   showToast(`已打开：${result.name}`)
 }
 
@@ -183,6 +185,7 @@ export async function initFileUI(): Promise<void> {
     ])
     if (v === 'restore') {
       await replaceDoc(draft.doc, null, null)
+      startView.visible = false
       showToast('已恢复草稿（记得及时保存为文件）')
     } else {
       await window.myresume.file.autorecoverClear()
@@ -208,3 +211,13 @@ export function handleMenuAction(action: MenuAction): void {
 }
 
 export const modalApi = { onChoose, showToast }
+
+// ———————————————— 首启起始页 ————————————————
+
+export const startView = reactive({ visible: true })
+
+/** 从起始页选择模板开始空白简历 */
+export function startWithTemplate(id: TemplateId): void {
+  store.doc.meta.template = id
+  startView.visible = false
+}

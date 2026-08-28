@@ -7,6 +7,7 @@ import EditorPanel from './editor/EditorPanel.vue'
 import PreviewPane from './preview/PreviewPane.vue'
 import ConfirmModal from './fileUI/ConfirmModal.vue'
 import SaveStatus from './fileUI/SaveStatus.vue'
+import StartPage from './fileUI/StartPage.vue'
 import TypographyPanel from './fileUI/TypographyPanel.vue'
 import {
   exportPdfAction,
@@ -16,6 +17,7 @@ import {
   newDocAction,
   openDocAction,
   saveDoc,
+  startView,
   toast
 } from './fileUI/useFileActions'
 
@@ -38,7 +40,9 @@ function onTemplateChange(e: Event): void {
 </script>
 
 <template>
-  <div class="app-shell">
+  <StartPage v-if="startView.visible" />
+
+  <div v-else class="app-shell">
     <header class="app-topbar">
       <div class="brand">
         <span class="brand-mark">简</span>
@@ -78,13 +82,14 @@ function onTemplateChange(e: Event): void {
         <PreviewPane />
       </main>
     </div>
-
-    <ConfirmModal />
-
-    <transition name="toast">
-      <div v-if="toast.visible" class="toast">{{ toast.text }}</div>
-    </transition>
   </div>
+
+  <!-- 弹窗与提示条全局可用（含起始页） -->
+  <ConfirmModal />
+
+  <transition name="toast">
+    <div v-if="toast.visible" class="toast">{{ toast.text }}</div>
+  </transition>
 </template>
 
 <style scoped>

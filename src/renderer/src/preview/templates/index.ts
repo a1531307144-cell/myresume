@@ -6,11 +6,16 @@ import LawEducation from './LawClassic/sections/LawEducation.vue'
 import LawExperience from './LawClassic/sections/LawExperience.vue'
 import LawListBlock from './LawClassic/sections/LawListBlock.vue'
 import LawTextBlock from './LawClassic/sections/LawTextBlock.vue'
+import SimpleModernPage from './SimpleModern/SimpleModernPage.vue'
+import SimpleBasicInfo from './SimpleModern/sections/SimpleBasicInfo.vue'
+import SimpleEducation from './SimpleModern/sections/SimpleEducation.vue'
+import SimpleExperience from './SimpleModern/sections/SimpleExperience.vue'
+import SimpleListBlock from './SimpleModern/sections/SimpleListBlock.vue'
+import SimpleTextBlock from './SimpleModern/sections/SimpleTextBlock.vue'
 
 export interface TemplateDef {
   id: TemplateId
   name: string
-  /** simple-modern 于 M4 里程碑上线 */
   available: boolean
   page: Component
   sectionRenderers: Record<SectionType, Component>
@@ -33,14 +38,14 @@ export const TEMPLATES: Record<TemplateId, TemplateDef> = {
   'simple-modern': {
     id: 'simple-modern',
     name: '通用简约风',
-    available: false,
-    page: LawClassicPage,
+    available: true,
+    page: SimpleModernPage,
     sectionRenderers: {
-      basicInfo: LawBasicInfo,
-      education: LawEducation,
-      experience: LawExperience,
-      listBlock: LawListBlock,
-      textBlock: LawTextBlock
+      basicInfo: SimpleBasicInfo,
+      education: SimpleEducation,
+      experience: SimpleExperience,
+      listBlock: SimpleListBlock,
+      textBlock: SimpleTextBlock
     }
   }
 }
