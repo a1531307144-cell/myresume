@@ -1,0 +1,210 @@
+import { reactive } from 'vue'
+import type { MenuAction } from '@shared/ipc'
+import type { ResumeDocument } from '@shared/schema'
+import { createDefaultDocument } from '@shared/defaults'
+import { replaceDoc, store } from '@renderer/stores/resume'
+
+/** 文件操作流程层：确认弹窗、菜单动作、保存/打开/导出协调（渲染侧唯一入口） */
+
+interface ModalButton {
+  label: string
+  value: string
+  kind?: 'primary' | 'danger'
+}
+
+export const modal = reactive({
+  visible: false,
+  title: '',
+  text: '',
+  buttons: [] as ModalButton[]
+})
+
+export const toast = reactive({ visible: false, text: '' })
+
+let modalChoose: ((v: string) => void) | null = null
+let toastTimer: ReturnType<typeof setTimeout> | undefined
+
+function ask(title: string, text: string, buttons: ModalButton[]): Promise<string> {
+  return new Promise((resolve) => {
+    modal.title = title
+    modal.text = text
+    modal.buttons = buttons
+    modal.visible = true
+    modalChoose = (v: string) => {
+      modal.visible = false
+      resolve(v)
+    }
+  })
+}
+
+function onChoose(v: string): void {
+  modalChoose?.(v)
+  modalChoose = null
+}
+
+function showToast(text: string): void {
+  toast.text = text
+  toast.visible = true
+  clearTimeout(toastTimer)
+  toastTimer = setTimeout(() => {
+    toast.visible = false
+  }, 3200)
+}
+
+function plainDoc(): ResumeDocument {
+  return JSON.parse(JSON.stringify(store.doc)) as ResumeDocument
+}
+
+async function infoBox(title: string, text: string): Promise<void> {
+  await ask(title, text, [{ label: '知道了', value: 'ok', kind: 'primary' }])
+}
+
+// ———————————————— 保存 ————————————————
+
+export async function saveDoc(as = false): Promise<boolean> {
+  const doc = plainDoc()
+  const useAs = as || !store.filePath
+  store.saveStatus = 'saving'
+  const r = useAs ? await window.myresume.file.saveAs(doc) : await window.myresume.file.save(doc)
+
+  if (!r || r.canceled) {
+    store.saveStatus = store.dirty ? (store.filePath ? 'dirty' : 'draft') : 'saved'
+    return false
+  }
+  if (r.error) {
+    store.saveStatus = 'error'
+    await infoBox('保存失败', r.error)
+    return false
+  }
+  store.filePath = r.path!
+  store.fileName = r.name!
+  store.dirty = false
+  store.saveStatus = 'saved'
+  void window.myresume.file.setDirty(false)
+  showToast(`已保存：${r.name}`)
+  return true
+}
+
+/** 脏文档保护：取消 / 不保存 / 保存 */
+async function confirmGuard(): Promise<'cancel' | 'discard' | 'save'> {
+  if (!store.dirty) return 'discard'
+  const v = await ask('未保存的修改', '当前简历有未保存的修改。', [
+    { label: '取消', value: 'cancel' },
+    { label: '不保存', value: 'discard', kind: 'danger' },
+    { label: '保存', value: 'save', kind: 'primary' }
+  ])
+  return v as 'cancel' | 'discard' | 'save'
+}
+
+// ———————————————— 新建 / 打开 ————————————————
+
+export async function newDocAction(): Promise<void> {
+  const choice = await confirmGuard()
+  if (choice === 'cancel') return
+  if (choice === 'save') {
+    const ok = await saveDoc()
+    if (!ok) return
+  }
+  await window.myresume.file.newSession()
+  await replaceDoc(createDefaultDocument(store.doc.meta.template), null, null)
+  showToast('已新建空白简历')
+}
+
+async function openFrom(result: Awaited<ReturnType<typeof window.myresume.file.open>>): Promise<void> {
+  if (!result || result.canceled) return
+  if (result.error) {
+    await infoBox('打开失败', result.error)
+    return
+  }
+  await replaceDoc(result.doc!, result.path!, result.name!)
+  showToast(`已打开：${result.name}`)
+}
+
+export async function openDocAction(): Promise<void> {
+  const choice = await confirmGuard()
+  if (choice === 'cancel') return
+  if (choice === 'save') {
+    const ok = await saveDoc()
+    if (!ok) return
+  }
+  const r = await window.myresume.file.open()
+  await openFrom(r)
+}
+
+export async function openRecentAction(path: string): Promise<void> {
+  const choice = await confirmGuard()
+  if (choice === 'cancel') return
+  if (choice === 'save') {
+    const ok = await saveDoc()
+    if (!ok) return
+  }
+  const r = await window.myresume.file.openRecent(path)
+  await openFrom(r)
+}
+
+// ———————————————— PDF 导出 ————————————————
+
+export const exporting = reactive({ busy: false })
+
+export async function exportPdfAction(): Promise<void> {
+  if (exporting.busy) return
+  exporting.busy = true
+  try {
+    const r = await window.myresume.pdf.export(plainDoc())
+    if (r.savedPath) {
+      showToast(`已导出 PDF：${r.savedPath}`)
+    } else if (r.error) {
+      await infoBox('导出失败', r.error)
+    }
+  } finally {
+    exporting.busy = false
+  }
+}
+
+// ———————————————— 关于 / 草稿恢复 / 菜单 ————————————————
+
+async function aboutAction(): Promise<void> {
+  const version = await window.myresume.app.getVersion()
+  await infoBox(
+    '关于「我的简历」',
+    `我的简历 v${version}\n简单好用的桌面简历编辑器\n\nMIT 开源\nhttps://github.com/a1531307144-cell/myresume`
+  )
+}
+
+/** 应用启动时检查未保存草稿 */
+export async function initFileUI(): Promise<void> {
+  try {
+    const draft = await window.myresume.file.autorecoverRead()
+    if (!draft?.doc) return
+    const when = draft.updatedAt ? new Date(draft.updatedAt).toLocaleString('zh-CN') : '上次'
+    const v = await ask('发现未保存的草稿', `检测到 ${when}编辑过但未保存的简历内容。\n恢复它继续编辑，还是丢弃？`, [
+      { label: '丢弃', value: 'discard', kind: 'danger' },
+      { label: '恢复', value: 'restore', kind: 'primary' }
+    ])
+    if (v === 'restore') {
+      await replaceDoc(draft.doc, null, null)
+      showToast('已恢复草稿（记得及时保存为文件）')
+    } else {
+      await window.myresume.file.autorecoverClear()
+    }
+  } catch (err) {
+    console.warn('草稿检查失败', err)
+  }
+}
+
+/** 原生菜单 / 工具栏统一动作入口 */
+export function handleMenuAction(action: MenuAction): void {
+  if (action === 'new-doc') void newDocAction()
+  else if (action === 'open-doc') void openDocAction()
+  else if (action === 'save-doc') void saveDoc()
+  else if (action === 'save-as-doc') void saveDoc(true)
+  else if (action === 'save-and-close') {
+    void (async () => {
+      const ok = await saveDoc()
+      if (ok || !store.dirty) await window.myresume.app.closeWindow()
+    })()
+  } else if (action === 'about') void aboutAction()
+  else if (typeof action === 'object' && action.type === 'open-recent') void openRecentAction(action.path)
+}
+
+export const modalApi = { onChoose, showToast }

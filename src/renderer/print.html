@@ -3,7 +3,10 @@
   <head>
     <meta charset="UTF-8" />
     <title>打印</title>
-    <!-- 打印窗口：M3 里程碑将在此加载与预览完全相同的模板组件树，用于导出矢量 PDF -->
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:"
+    />
   </head>
   <body>
     <div id="app"></div>

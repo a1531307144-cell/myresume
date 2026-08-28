@@ -1,16 +1,29 @@
 <script setup lang="ts">
 import { onMounted, ref } from 'vue'
 import type { TemplateId } from '@shared/schema'
-import { useResumeStore } from './stores/resume'
+import { store } from './stores/resume'
 import { TEMPLATES } from './preview/templates'
 import EditorPanel from './editor/EditorPanel.vue'
 import PreviewPane from './preview/PreviewPane.vue'
+import ConfirmModal from './fileUI/ConfirmModal.vue'
+import SaveStatus from './fileUI/SaveStatus.vue'
+import {
+  exportPdfAction,
+  exporting,
+  handleMenuAction,
+  initFileUI,
+  newDocAction,
+  openDocAction,
+  saveDoc,
+  toast
+} from './fileUI/useFileActions'
 
-const { store } = useResumeStore()
 const version = ref('…')
 
 onMounted(async () => {
   version.value = await window.myresume.app.getVersion()
+  window.myresume.menu.onAction(handleMenuAction)
+  void initFileUI()
 })
 
 const templateOptions = Object.values(TEMPLATES)
@@ -29,16 +42,28 @@ function onTemplateChange(e: Event): void {
       <div class="brand">
         <span class="brand-mark">简</span>
         <span class="brand-name">我的简历</span>
-        <span class="brand-version">v{{ version }}</span>
       </div>
 
-      <div class="topbar-actions">
+      <div class="file-btns">
+        <button class="tb-btn" @click="newDocAction()">新建</button>
+        <button class="tb-btn" @click="openDocAction()">打开</button>
+        <button class="tb-btn" :class="{ disabled: !store.dirty }" @click="saveDoc()">保存</button>
+        <button class="tb-btn" @click="saveDoc(true)">另存为</button>
+      </div>
+
+      <div class="topbar-right">
         <label class="tpl-label">模板</label>
         <select class="tpl-select" :value="store.doc.meta.template" @change="onTemplateChange">
           <option v-for="t in templateOptions" :key="t.id" :value="t.id" :disabled="!t.available">
             {{ t.name }}{{ t.available ? '' : '（即将上线）' }}
           </option>
         </select>
+
+        <button class="tb-btn export" :disabled="exporting.busy" @click="exportPdfAction()">
+          {{ exporting.busy ? '导出中…' : '导出 PDF' }}
+        </button>
+
+        <SaveStatus />
       </div>
     </header>
 
@@ -50,6 +75,12 @@ function onTemplateChange(e: Event): void {
         <PreviewPane />
       </main>
     </div>
+
+    <ConfirmModal />
+
+    <transition name="toast">
+      <div v-if="toast.visible" class="toast">{{ toast.text }}</div>
+    </transition>
   </div>
 </template>
 
@@ -64,8 +95,8 @@ function onTemplateChange(e: Event): void {
 .app-topbar {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  padding: 10px 16px;
+  gap: 18px;
+  padding: 9px 16px;
   background: #fff;
   border-bottom: 1px solid #ececf3;
   flex-shrink: 0;
@@ -74,7 +105,7 @@ function onTemplateChange(e: Event): void {
 .brand {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 9px;
 }
 
 .brand-mark {
@@ -96,15 +127,52 @@ function onTemplateChange(e: Event): void {
   color: #24242e;
 }
 
-.brand-version {
-  font-size: 11px;
-  color: #b3b3c4;
+.file-btns {
+  display: flex;
+  gap: 6px;
 }
 
-.topbar-actions {
+.tb-btn {
+  padding: 6px 13px;
+  border: 1px solid #dcdce8;
+  background: #fff;
+  border-radius: 7px;
+  font-size: 13px;
+  color: #3c3c50;
+}
+
+.tb-btn:hover {
+  border-color: #667eea;
+  color: #667eea;
+}
+
+.tb-btn.disabled {
+  opacity: 0.55;
+}
+
+.tb-btn.export {
+  background: linear-gradient(135deg, #667eea, #764ba2);
+  border: none;
+  color: #fff;
+  font-weight: 500;
+  padding: 6px 16px;
+}
+
+.tb-btn.export:hover {
+  opacity: 0.92;
+  color: #fff;
+}
+
+.tb-btn.export:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.topbar-right {
+  margin-left: auto;
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 9px;
 }
 
 .tpl-label {
@@ -113,7 +181,7 @@ function onTemplateChange(e: Event): void {
 }
 
 .tpl-select {
-  padding: 5px 10px;
+  padding: 5px 9px;
   border: 1px solid #d9d9e6;
   border-radius: 6px;
   font-size: 13px;
@@ -143,5 +211,31 @@ function onTemplateChange(e: Event): void {
   flex: 1;
   min-width: 0;
   min-height: 0;
+}
+
+.toast {
+  position: fixed;
+  bottom: 26px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(30, 32, 48, 0.88);
+  color: #fff;
+  font-size: 13px;
+  padding: 9px 18px;
+  border-radius: 8px;
+  z-index: 120;
+  max-width: calc(100vw - 60px);
+  word-break: break-all;
+}
+
+.toast-enter-active,
+.toast-leave-active {
+  transition: all 0.2s ease;
+}
+
+.toast-enter-from,
+.toast-leave-to {
+  opacity: 0;
+  transform: translateX(-50%) translateY(8px);
 }
 </style>

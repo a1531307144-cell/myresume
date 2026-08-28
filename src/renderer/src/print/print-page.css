@@ -1,0 +1,11 @@
+/* 打印窗口页面环境：白底、无外边距，让模板的 210mm 画布即打印内容本身 */
+html,
+body {
+  margin: 0;
+  padding: 0;
+  background: #fff;
+}
+
+#app {
+  display: inline-block;
+}

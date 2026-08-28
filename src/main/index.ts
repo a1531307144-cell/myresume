@@ -1,6 +1,9 @@
-import { app, BrowserWindow, shell, ipcMain } from 'electron'
+import { app, BrowserWindow, dialog, ipcMain, shell } from 'electron'
 import { join } from 'path'
 import { registerDialogIpc } from './dialogs'
+import { buildAppMenu, watchMenuRebuild } from './menu'
+import { initFileService, isSessionDirty, registerFileIpc } from './fileService'
+import { registerPdfIpc } from './pdfExporter'
 
 function createWindow(): void {
   const win = new BrowserWindow({
@@ -23,6 +26,13 @@ function createWindow(): void {
     win.show()
   })
 
+  // 关闭保护：有未保存修改时拦截关闭，先询问
+  win.on('close', (e) => {
+    if (!isSessionDirty()) return
+    e.preventDefault()
+    void handleCloseWithDirty(win)
+  })
+
   // 外部链接一律交给系统默认浏览器，不在应用内开新窗口
   win.webContents.setWindowOpenHandler((details) => {
     if (details.url.startsWith('https://')) shell.openExternal(details.url)
@@ -36,11 +46,43 @@ function createWindow(): void {
   }
 }
 
-// 预加载 API 白名单（M0 仅一个只读接口，后续里程碑逐步扩充）
+async function handleCloseWithDirty(win: BrowserWindow): Promise<void> {
+  const r = await dialog.showMessageBox(win, {
+    type: 'warning',
+    title: '未保存的修改',
+    message: '当前简历有未保存的修改',
+    detail: '关闭前是否保存？',
+    buttons: ['保存并关闭', '直接关闭', '取消'],
+    defaultId: 0,
+    cancelId: 2,
+    noLink: true
+  })
+  if (r.response === 2) return // 取消
+  if (r.response === 1) {
+    win.destroy() // 直接关闭（自动保存草稿可能已存在，不影响）
+    return
+  }
+  // 保存并关闭：由渲染进程执行保存，成功后它会调用 app:close-window
+  win.webContents.send('menu:action', 'save-and-close')
+}
+
+// 预加载 API 白名单（只读接口）
 ipcMain.handle('app:getVersion', () => app.getVersion())
+
+// 渲染进程保存完成后请求关闭（绕过 close 拦截）
+ipcMain.handle('app:close-window', () => {
+  const win = BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0]
+  win?.destroy()
+})
 
 app.whenReady().then(() => {
   registerDialogIpc()
+  registerFileIpc()
+  registerPdfIpc()
+  void initFileService().then(() => {
+    buildAppMenu()
+    watchMenuRebuild()
+  })
   createWindow()
 
   app.on('activate', () => {
