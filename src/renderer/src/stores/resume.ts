@@ -1,4 +1,4 @@
-import { computed, nextTick, watch } from 'vue'
+import { computed, nextTick, reactive, watch } from 'vue'
 import type { ResumeDocument, Section } from '@shared/schema'
 import { createDefaultDocument } from '@shared/defaults'
 import { createSection } from '@shared/sectionDefs'
@@ -11,14 +11,14 @@ export type SaveStatus = 'saved' | 'saving' | 'dirty' | 'draft' | 'error'
  * 模块级单例 store：全应用只有一个「当前文档」状态。
  * 所有修改都是响应式数据变更，编辑器与预览自动同步。
  */
-export const store = {
+export const store = reactive({
   doc: createDefaultDocument('law-classic') as ResumeDocument,
   filePath: null as string | null,
   fileName: null as string | null,
   dirty: false,
   saveStatus: 'draft' as SaveStatus,
   pickerOpen: false
-}
+})
 
 // ———————————————— 编辑监听：置脏 + 防抖自动保存 ————————————————
 
