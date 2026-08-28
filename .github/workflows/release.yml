@@ -31,7 +31,32 @@ jobs:
       - name: Build renderer/main/preload
         run: npm run build
 
-      - name: Build installer & publish to GitHub Releases
+      # 先创建草稿 Release，避免 electron-builder 并发上传时竞争创建导致丢文件
+      - name: Pre-create draft release
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: pwsh
+        run: |
+          @"
+          ## 我的简历 $env:GITHUB_REF_NAME
+
+          简单好用的桌面简历编辑器。
+
+          ### ✨ 本版本包含
+          - 板块自由增删/改名/排序（10 种预设）
+          - 两套模板：法学正式风 + 通用简约风（无损互切）
+          - 排版个性化（字体 / 字号 / 行距）
+          - 本地文件保存 + 自动保存 + 防丢草稿
+          - 矢量文字 PDF 导出（可选中、可搜索、分页不切字）
+
+          ### 📥 安装
+          下载下方 **MyResume-Setup-$env:GITHUB_REF_NAME.exe** 双击安装。
+          首次安装如遇「Windows 已保护你的电脑」：点 **更多信息 → 仍要运行**（个人开源软件未购买签名证书，属正常现象）。
+          "@ | Out-File -FilePath release-notes.md -Encoding utf8
+          gh release create "$env:GITHUB_REF_NAME" --draft --title "我的简历 $env:GITHUB_REF_NAME" --notes-file release-notes.md
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build installer & upload to draft release
         run: npx electron-builder --win nsis --publish always
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -47,9 +72,16 @@ jobs:
           Get-Content release/SHA256SUMS.txt
 
       - name: Upload checksums to release
+        if: startsWith(github.ref, 'refs/tags/v')
         shell: pwsh
-        run: |
-          $tag = $env:GITHUB_REF_NAME
-          gh release upload "$tag" release/SHA256SUMS.txt --clobber
+        run: gh release upload "$env:GITHUB_REF_NAME" release/SHA256SUMS.txt --clobber
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # 草稿转正式：electron-updater 只认正式 Release
+      - name: Publish release
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: pwsh
+        run: gh release edit "$env:GITHUB_REF_NAME" --draft=false
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
