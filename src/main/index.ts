@@ -112,3 +112,8 @@ app.whenReady().then(() => {
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit()
 })
+
+// 开发模式开放调试端口（自测/排查用；必须在 app ready 前注册；打包版不开启）
+if (!app.isPackaged) {
+  app.commandLine.appendSwitch('remote-debugging-port', '9222')
+}

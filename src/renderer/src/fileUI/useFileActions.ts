@@ -250,6 +250,16 @@ const isNewWindow = typeof location !== 'undefined' && new URLSearchParams(locat
 export const startView = reactive({ visible: !isNewWindow })
 export const settingsUI = reactive({ open: false })
 
+// 开发环境自测钩子（打包版不存在）
+if (import.meta.env.DEV && typeof window !== 'undefined') {
+  ;(window as unknown as Record<string, unknown>)['__mrTest'] = {
+    openImport: () => {
+      importUI.pending = null
+      importUI.open = true
+    }
+  }
+}
+
 /** 从编辑器返回首页（当前文档保留在内存，可随时回来） */
 export function homeAction(): void {
   startView.visible = true

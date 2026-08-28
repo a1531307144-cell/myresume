@@ -113,6 +113,10 @@ async function processPicked(picked: { name: string; ext: string; dataBase64: st
   }
 }
 
+function selectedProfileName(): string {
+  return profiles.value.find((p) => p.id === selectedProfileId.value)?.name ?? 'AI 模型'
+}
+
 async function checkAi(): Promise<void> {
   try {
     const c = await window.myresume.ai.getConfig()
@@ -187,6 +191,19 @@ function close(): void {
 function toast(msg: string): void {
   modalApi.showToast(msg)
 }
+
+// 开发环境自测钩子：直接注入文件走完整流程（打包版不存在）
+if (import.meta.env.DEV) {
+  ;(window as unknown as Record<string, unknown>)['__mrTestImport'] = processPicked
+  ;(window as unknown as Record<string, unknown>)['__mrTestState'] = () => ({
+    step: step.value,
+    parseMode: parseMode.value,
+    aiReady: aiReady.value,
+    profileCount: profiles.value.length,
+    selected: selectedProfileId.value,
+    error: error.value
+  })
+}
 </script>
 
 <template>
@@ -218,10 +235,19 @@ function toast(msg: string): void {
             <span class="opt-title">本地智能解析</span>
             <span class="opt-sub">离线 · 快速 · 适合格式规整的简历</span>
           </button>
-          <div class="opt ai-opt" :class="{ disabled: aiReady === false }">
-            <button class="ai-run" @click="aiReady ? parseAi() : ((settingsUI.open = true), toast('先添加模型并填写 Key 再使用'))">
+          <div class="opt ai-opt" :class="{ disabled: aiReady !== true }">
+            <button
+              class="ai-run"
+              @click="aiReady === true ? parseAi() : aiReady === false ? ((settingsUI.open = true), toast('先添加模型并填写 Key 再使用')) : undefined"
+            >
               <span class="opt-title">AI 智能解析<span class="badge">推荐</span></span>
-              <span class="opt-sub">{{ aiReady === false ? '未配置——点击添加模型（需自备 API Key）' : '更准确 · 需联网 · 内容仅发送到你选择的接口' }}</span>
+              <span class="opt-sub">{{
+                aiReady === null
+                  ? '正在检查模型配置…'
+                  : aiReady === false
+                    ? '未配置——点击添加模型（需自备 API Key）'
+                    : '更准确 · 需联网 · 内容仅发送到你选择的接口'
+              }}</span>
             </button>
             <div v-if="profiles.length > 0" class="ai-model-row">
               <span class="ai-model-label">模型</span>

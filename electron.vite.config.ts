@@ -16,6 +16,10 @@ export default defineConfig({
         '@shared': resolve('src/shared')
       }
     },
+    // 预打包大依赖：避免首次使用时触发依赖优化导致的整页重载（会打断进行中的导入）
+    optimizeDeps: {
+      include: ['pdfjs-dist', 'mammoth/mammoth.browser']
+    },
     plugins: [vue()],
     build: {
       rollupOptions: {
