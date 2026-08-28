@@ -1,10 +1,12 @@
 import type { ResumeDocument } from './schema'
+import type { ParsedResume } from './importer'
 
 /** 三进程 IPC 契约类型（preload 与渲染进程共用） */
 
 export type MenuAction =
   | 'new-doc'
   | 'open-doc'
+  | 'import-doc'
   | 'save-doc'
   | 'save-as-doc'
   | 'save-and-close'
@@ -49,4 +51,31 @@ export interface PdfResult {
 
 export interface PrintPayload {
   doc: ResumeDocument
+}
+
+/** 导入文件选择结果：路径不出主进程，只回传文件名与内容（base64） */
+export interface PickedImportFile {
+  name: string
+  ext: string
+  dataBase64: string
+}
+
+/** 用户自备的 AI 服务配置（OpenAI 兼容格式）；apiKey 只存本机 userData */
+export interface AiConfig {
+  baseUrl: string
+  model: string
+  apiKey: string
+}
+
+export interface AiConfigView {
+  baseUrl: string
+  model: string
+  hasKey: boolean
+  keyMasked: string
+}
+
+export interface AiParseResult {
+  ok: boolean
+  error?: string
+  parsed?: ParsedResume
 }

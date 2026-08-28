@@ -25,6 +25,7 @@ export async function buildAppMenu(): Promise<void> {
       submenu: [
         { label: '新建简历', accelerator: 'CmdOrCtrl+N', click: () => sendAction('new-doc') },
         { label: '打开…', accelerator: 'CmdOrCtrl+O', click: () => sendAction('open-doc') },
+        { label: '导入已有简历…', accelerator: 'CmdOrCtrl+I', click: () => sendAction('import-doc') },
         { label: '最近文件', submenu: recentSub },
         { type: 'separator' },
         { label: '保存', accelerator: 'CmdOrCtrl+S', click: () => sendAction('save-doc') },

@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { onMounted, ref } from 'vue'
 import type { RecentItem } from '@shared/ipc'
-import { openDocAction, openRecentAction, startWithTemplate } from './useFileActions'
+import { importDocAction, openDocAction, openRecentAction, startWithTemplate } from './useFileActions'
 
 const recent = ref<RecentItem[]>([])
 const version = ref('')
@@ -61,6 +61,8 @@ function fmtDate(iso: string): string {
           <div class="card-desc">现代无衬线 · 留白呼吸 · 靛蓝点缀<br />适配任何专业与行业</div>
         </button>
       </div>
+
+      <button class="import-entry" @click="importDocAction()">已有简历？导入 Word / PDF，自动生成板块 →</button>
 
       <div class="start-recent">
         <div class="recent-head">最近打开</div>
@@ -250,9 +252,22 @@ function fmtDate(iso: string): string {
 }
 
 .start-recent {
-  margin-top: 36px;
+  margin-top: 28px;
   width: 524px;
   max-width: calc(100vw - 48px);
+}
+
+.import-entry {
+  margin-top: 22px;
+  border: none;
+  background: transparent;
+  font-size: 13px;
+  color: #667eea;
+  padding: 6px 10px;
+}
+
+.import-entry:hover {
+  text-decoration: underline;
 }
 
 .recent-head {

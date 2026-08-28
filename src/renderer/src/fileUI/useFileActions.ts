@@ -199,6 +199,7 @@ export async function initFileUI(): Promise<void> {
 export function handleMenuAction(action: MenuAction): void {
   if (action === 'new-doc') void newDocAction()
   else if (action === 'open-doc') void openDocAction()
+  else if (action === 'import-doc') void importDocAction()
   else if (action === 'save-doc') void saveDoc()
   else if (action === 'save-as-doc') void saveDoc(true)
   else if (action === 'save-and-close') {
@@ -212,6 +213,29 @@ export function handleMenuAction(action: MenuAction): void {
 }
 
 export const modalApi = { onChoose, showToast }
+
+// ———————————————— 导入已有简历 ————————————————
+
+export const importUI = reactive({ open: false })
+
+/** 打开导入流程（脏文档先确认） */
+export async function importDocAction(): Promise<void> {
+  const choice = await confirmGuard()
+  if (choice === 'cancel') return
+  if (choice === 'save') {
+    const ok = await saveDoc()
+    if (!ok) return
+  }
+  importUI.open = true
+}
+
+/** 导入完成：换入新文档并进入编辑器 */
+export async function finishImport(doc: ResumeDocument): Promise<void> {
+  await replaceDoc(doc, null, null)
+  importUI.open = false
+  startView.visible = false
+  showToast('导入完成——请逐板块检查内容是否正确')
+}
 
 // ———————————————— 首启起始页 ————————————————
 

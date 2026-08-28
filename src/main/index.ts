@@ -5,6 +5,8 @@ import { buildAppMenu, watchMenuRebuild } from './menu'
 import { initFileService, isSessionDirty, registerFileIpc } from './fileService'
 import { registerPdfIpc } from './pdfExporter'
 import { setupUpdater } from './updater'
+import { registerSettingsIpc } from './settings'
+import { registerAiIpc } from './aiService'
 
 function createWindow(): void {
   const win = new BrowserWindow({
@@ -80,6 +82,8 @@ app.whenReady().then(() => {
   registerDialogIpc()
   registerFileIpc()
   registerPdfIpc()
+  registerSettingsIpc()
+  registerAiIpc()
   void initFileService().then(() => {
     buildAppMenu()
     watchMenuRebuild()

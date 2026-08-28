@@ -1,5 +1,17 @@
 import { contextBridge, ipcRenderer } from 'electron'
-import type { MenuAction, OpenResult, PdfResult, PrintPayload, RecentItem, SaveResult, UpdateStatus } from '../shared/ipc'
+import type {
+  AiConfig,
+  AiConfigView,
+  AiParseResult,
+  MenuAction,
+  OpenResult,
+  PdfResult,
+  PickedImportFile,
+  PrintPayload,
+  RecentItem,
+  SaveResult,
+  UpdateStatus
+} from '../shared/ipc'
 import type { ResumeDocument } from '../shared/schema'
 
 /**
@@ -13,7 +25,17 @@ const api = {
   },
   dialog: {
     /** 返回原图 dataUrl（渲染进程负责压缩），取消返回 null */
-    pickPhoto: (): Promise<{ dataUrl: string } | null> => ipcRenderer.invoke('dialog:pickPhoto')
+    pickPhoto: (): Promise<{ dataUrl: string } | null> => ipcRenderer.invoke('dialog:pickPhoto'),
+    /** 选择要导入的简历文件，取消返回 null */
+    pickImportFile: (): Promise<PickedImportFile | null> => ipcRenderer.invoke('dialog:pickImportFile')
+  },
+  ai: {
+    getConfig: (): Promise<AiConfigView> => ipcRenderer.invoke('ai:getConfig'),
+    setConfig: (patch: { baseUrl?: string; model?: string; apiKey?: string | null }): Promise<void> =>
+      ipcRenderer.invoke('ai:setConfig', patch),
+    test: (): Promise<{ ok: boolean; error?: string }> => ipcRenderer.invoke('ai:test'),
+    /** 纯文本 → 主进程代理 AI 解析 → 校验后的结构化结果 */
+    parse: (text: string): Promise<AiParseResult> => ipcRenderer.invoke('ai:parse', { text })
   },
   file: {
     newSession: (): Promise<void> => ipcRenderer.invoke('file:new'),

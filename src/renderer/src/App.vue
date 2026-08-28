@@ -9,11 +9,13 @@ import ConfirmModal from './fileUI/ConfirmModal.vue'
 import SaveStatus from './fileUI/SaveStatus.vue'
 import StartPage from './fileUI/StartPage.vue'
 import TypographyPanel from './fileUI/TypographyPanel.vue'
+import ImportDialog from './fileUI/ImportDialog.vue'
 import UpdateToast from './updaterUI/UpdateToast.vue'
 import {
   exportPdfAction,
   exporting,
   handleMenuAction,
+  importUI,
   initFileUI,
   newDocAction,
   openDocAction,
@@ -87,6 +89,7 @@ function onTemplateChange(e: Event): void {
 
   <!-- 弹窗与提示条全局可用（含起始页） -->
   <ConfirmModal />
+  <ImportDialog v-if="importUI.open" />
   <UpdateToast />
 
   <transition name="toast">
