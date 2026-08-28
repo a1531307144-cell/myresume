@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import type { AiProfileView } from '@shared/ipc'
 import { buildDocument, parseResumeText } from '@shared/importer'
 import { extractText } from '@renderer/importerClient/extract'
@@ -19,7 +19,19 @@ const selectedProfileId = ref('')
 const parseMode = ref<'' | 'local' | 'ai'>('')
 const elapsed = ref(0)
 const aiChars = ref(0)
+const aiText = ref('')
+const extractPage = ref<{ current: number; total: number } | null>(null)
 let elapsedTimer: ReturnType<typeof setInterval> | undefined
+
+/** 实时识别清单：AI 生成的 JSON 里出现对应标记即点亮 */
+const checkmarks = computed(() => [
+  { label: '姓名', hit: /"name"\s*:\s*"[^"]{1,20}"/.test(aiText.value) },
+  { label: '联系方式', hit: /"label"\s*:\s*"[^"]+"/.test(aiText.value) },
+  { label: '教育背景', hit: /"type"\s*:\s*"education"/.test(aiText.value) },
+  { label: '经历板块', hit: /"type"\s*:\s*"experience"/.test(aiText.value) },
+  { label: '技能/荣誉', hit: /"type"\s*:\s*"listBlock"/.test(aiText.value) },
+  { label: '自我评价', hit: /"type"\s*:\s*"textBlock"/.test(aiText.value) }
+])
 
 // 设置窗口关闭后刷新模型状态
 watch(
@@ -32,6 +44,7 @@ watch(
 onMounted(() => {
   window.myresume.ai.onProgress((p) => {
     aiChars.value = p.chars
+    aiText.value = p.text
   })
 })
 
@@ -81,8 +94,11 @@ async function processPicked(picked: { name: string; ext: string; dataBase64: st
   error.value = ''
   fileName.value = picked.name
   step.value = 'extracting'
+  extractPage.value = null
   try {
-    text.value = await extractText(picked.ext, picked.dataBase64)
+    text.value = await extractText(picked.ext, picked.dataBase64, (current, total) => {
+      extractPage.value = { current, total }
+    })
     charCount.value = text.value.length
     if (!text.value) {
       error.value = '没有提取到文字内容'
@@ -134,6 +150,7 @@ async function parseAi(): Promise<void> {
   step.value = 'importing'
   parseMode.value = 'ai'
   aiChars.value = 0
+  aiText.value = ''
   startTimer()
   try {
     const r = await window.myresume.ai.parse(text.value, selectedProfileId.value || undefined)
@@ -184,7 +201,10 @@ function toast(msg: string): void {
       </template>
 
       <template v-else-if="step === 'extracting'">
-        <p class="desc">正在提取「{{ fileName }}」的文字…</p>
+        <p class="desc">
+          正在提取「{{ fileName }}」的文字…<template v-if="extractPage">
+            第 {{ extractPage.current }} / {{ extractPage.total }} 页</template>
+        </p>
         <div class="spinner"></div>
       </template>
 
@@ -228,6 +248,13 @@ function toast(msg: string): void {
           </template>
           <template v-else>正在解析… {{ elapsed }} 秒</template>
         </p>
+
+        <div v-if="parseMode === 'ai'" class="check-list">
+          <span v-for="c in checkmarks" :key="c.label" class="check-chip" :class="{ on: c.hit }">
+            <span class="chip-mark">{{ c.hit ? '✓' : '···' }}</span>{{ c.label }}
+          </span>
+        </div>
+
         <div v-if="parseMode === 'ai'" class="stream-bar"><div class="stream-fill"></div></div>
         <div v-else class="spinner"></div>
         <button v-if="parseMode === 'ai'" class="cancel-parse" @click="cancelParse">取消解析</button>
@@ -436,6 +463,36 @@ function toast(msg: string): void {
   100% {
     left: 100%;
   }
+}
+
+/* 实时识别清单：AI 识别到对应板块时逐个点亮 */
+.check-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 4px 0 14px;
+}
+
+.check-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 12px;
+  color: #b3b3c4;
+  border: 1px solid #ececf3;
+  border-radius: 20px;
+  padding: 3px 11px;
+  transition: all 0.25s ease;
+}
+
+.check-chip.on {
+  color: #2f9e6e;
+  border-color: #bfe6d4;
+  background: #f0faf5;
+}
+
+.chip-mark {
+  font-size: 11px;
 }
 
 /* 等待模型首字时的呼吸点 */

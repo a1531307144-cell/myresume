@@ -100,7 +100,9 @@ export interface AiParseResult {
   profileName?: string
 }
 
-/** AI 流式生成进度（已接收字符数） */
+/** AI 流式生成进度：已接收字符数 + 当前累积内容（用于界面实时展示识别进展） */
 export interface AiProgress {
   chars: number
+  /** 累积生成的完整文本（节流推送）；识别清单由此实时分析 */
+  text: string
 }

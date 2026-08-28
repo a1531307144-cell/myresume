@@ -38,9 +38,9 @@ function buildUserPrompt(text: string): string {
   return `请解析以下简历文本：\n\n${clipped}`
 }
 
-function broadcastProgress(chars: number): void {
+function broadcastProgress(chars: number, text: string): void {
   for (const win of BrowserWindow.getAllWindows()) {
-    if (!win.isDestroyed()) win.webContents.send('ai:progress', { chars })
+    if (!win.isDestroyed()) win.webContents.send('ai:progress', { chars, text })
   }
 }
 
@@ -69,7 +69,7 @@ export function registerAiIpc(): void {
     const controller = new AbortController()
     currentAbort = controller
     const timer = setTimeout(() => controller.abort(), TIMEOUT_MS)
-    broadcastProgress(0)
+    broadcastProgress(0, '')
     try {
       const res = await fetch(url, {
         method: 'POST',
@@ -101,6 +101,7 @@ export function registerAiIpc(): void {
       let content: string
       if (contentType.includes('text/event-stream') && res.body) {
         content = await consumeStream(res.body, controller)
+        broadcastProgress(content.length, content)
       } else {
         const raw = await res.text()
         if (raw.length > MAX_RESPONSE_CHARS) return { ok: false, error: 'AI 服务返回内容过大' }
@@ -182,7 +183,7 @@ export function registerAiIpc(): void {
   )
 }
 
-/** 读取 SSE 流：累积 delta.content，节流回报进度 */
+/** 读取 SSE 流：累积 delta.content，节流回报进度（含累积文本，供界面实时展示识别进展） */
 async function consumeStream(body: ReadableStream<Uint8Array>, controller: AbortController): Promise<string> {
   const reader = body.getReader()
   const decoder = new TextDecoder()
@@ -224,9 +225,8 @@ async function consumeStream(body: ReadableStream<Uint8Array>, controller: Abort
     }
     if (received - lastReported >= PROGRESS_EVERY_CHARS) {
       lastReported = received
-      broadcastProgress(received)
+      broadcastProgress(received, content)
     }
   }
-  broadcastProgress(received)
   return content
 }
