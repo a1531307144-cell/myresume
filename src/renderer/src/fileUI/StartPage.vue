@@ -4,6 +4,7 @@ import type { RecentItem } from '@shared/ipc'
 import { openDocAction, openRecentAction, startWithTemplate } from './useFileActions'
 
 const recent = ref<RecentItem[]>([])
+const version = ref('')
 
 onMounted(async () => {
   try {
@@ -11,6 +12,7 @@ onMounted(async () => {
   } catch {
     recent.value = []
   }
+  version.value = await window.myresume.app.getVersion()
 })
 
 function fmtDate(iso: string): string {
@@ -70,7 +72,7 @@ function fmtDate(iso: string): string {
       </div>
     </div>
 
-    <footer class="start-footer">MIT 开源 · 数据只存在你自己的电脑上</footer>
+    <footer class="start-footer">MIT 开源 · 数据只存在你自己的电脑上 · v{{ version }}</footer>
   </div>
 </template>
 

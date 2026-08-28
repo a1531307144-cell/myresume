@@ -217,8 +217,13 @@ export const modalApi = { onChoose, showToast }
 
 export const startView = reactive({ visible: true })
 
-/** 从起始页选择模板开始空白简历 */
+/** 从起始页选择模板开始空白简历（记住选择，下次启动默认用它） */
 export function startWithTemplate(id: TemplateId): void {
   store.doc.meta.template = id
+  try {
+    localStorage.setItem('myresume.lastTemplate', id)
+  } catch {
+    /* 忽略存储失败 */
+  }
   startView.visible = false
 }

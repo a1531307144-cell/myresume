@@ -11,8 +11,19 @@ export type SaveStatus = 'saved' | 'saving' | 'dirty' | 'draft' | 'error'
  * 模块级单例 store：全应用只有一个「当前文档」状态。
  * 所有修改都是响应式数据变更，编辑器与预览自动同步。
  */
+/** 记住上次使用的模板（起始页选择时写入） */
+function initialTemplate(): ResumeDocument['meta']['template'] {
+  try {
+    const saved = localStorage.getItem('myresume.lastTemplate')
+    if (saved === 'law-classic' || saved === 'simple-modern') return saved
+  } catch {
+    /* 忽略读取失败 */
+  }
+  return 'law-classic'
+}
+
 export const store = reactive({
-  doc: createDefaultDocument('law-classic') as ResumeDocument,
+  doc: createDefaultDocument(initialTemplate()) as ResumeDocument,
   filePath: null as string | null,
   fileName: null as string | null,
   dirty: false,
