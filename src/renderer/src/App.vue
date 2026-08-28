@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
+import { onBeforeUnmount, onMounted, ref } from 'vue'
 import type { TemplateId } from '@shared/schema'
 import { store } from './stores/resume'
 import { TEMPLATES } from './preview/templates'
@@ -18,8 +18,10 @@ import {
   exporting,
   handleMenuAction,
   homeAction,
+  importDocAction,
   importUI,
   initFileUI,
+  modalApi,
   newDocAction,
   openDocAction,
   saveDoc,
@@ -29,6 +31,52 @@ import {
 } from './fileUI/useFileActions'
 
 const version = ref('…')
+
+// ———— 全窗口拖放导入 ————
+const dragDepth = ref(0)
+
+function onDragOver(e: DragEvent): void {
+  e.preventDefault()
+  if (e.dataTransfer) e.dataTransfer.dropEffect = 'copy'
+}
+
+function onDragEnter(): void {
+  dragDepth.value += 1
+}
+
+function onDragLeave(): void {
+  dragDepth.value = Math.max(0, dragDepth.value - 1)
+}
+
+function onDrop(e: DragEvent): void {
+  e.preventDefault()
+  dragDepth.value = 0
+  const file = e.dataTransfer?.files?.[0]
+  if (!file) return
+  void (async () => {
+    try {
+      const path = window.myresume.file.getPathForFile(file)
+      const picked = await window.myresume.dialog.readDropped(path)
+      await importDocAction(picked)
+    } catch (err) {
+      modalApi.showToast(err instanceof Error ? err.message : '无法导入该文件')
+    }
+  })()
+}
+
+onMounted(() => {
+  window.addEventListener('dragover', onDragOver)
+  window.addEventListener('dragenter', onDragEnter)
+  window.addEventListener('dragleave', onDragLeave)
+  window.addEventListener('drop', onDrop)
+})
+
+onBeforeUnmount(() => {
+  window.removeEventListener('dragover', onDragOver)
+  window.removeEventListener('dragenter', onDragEnter)
+  window.removeEventListener('dragleave', onDragLeave)
+  window.removeEventListener('drop', onDrop)
+})
 
 onMounted(async () => {
   version.value = await window.myresume.app.getVersion()
@@ -60,6 +108,7 @@ function onTemplateChange(e: Event): void {
         <button class="tb-btn" @click="homeAction()">首页</button>
         <button class="tb-btn" @click="newDocAction()">新建</button>
         <button class="tb-btn" @click="openDocAction()">打开</button>
+        <button class="tb-btn" @click="importDocAction()">导入</button>
         <button class="tb-btn" :class="{ disabled: !store.dirty }" @click="saveDoc()">保存</button>
         <button class="tb-btn" @click="saveDoc(true)">另存为</button>
       </div>
@@ -99,6 +148,11 @@ function onTemplateChange(e: Event): void {
   <ImportDialog v-if="importUI.open" />
   <SettingsDialog v-if="settingsUI.open" @close="settingsUI.open = false" />
   <UpdateToast />
+
+  <!-- 全窗口拖放导入提示 -->
+  <div v-if="dragDepth > 0" class="drop-overlay">
+    <div class="drop-box">松开鼠标，导入简历文件（Word / PDF / TXT）</div>
+  </div>
 
   <transition name="toast">
     <div v-if="toast.visible" class="toast">{{ toast.text }}</div>
@@ -247,6 +301,29 @@ function onTemplateChange(e: Event): void {
   z-index: 120;
   max-width: calc(100vw - 60px);
   word-break: break-all;
+}
+
+.drop-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(102, 126, 234, 0.14);
+  backdrop-filter: blur(1px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 130;
+  pointer-events: none;
+}
+
+.drop-box {
+  padding: 26px 44px;
+  border: 2.5px dashed #667eea;
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.94);
+  font-size: 16px;
+  font-weight: 600;
+  color: #5a63d8;
+  box-shadow: 0 18px 50px rgba(60, 70, 140, 0.24);
 }
 
 .toast-enter-active,

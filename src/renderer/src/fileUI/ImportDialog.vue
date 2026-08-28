@@ -35,6 +35,18 @@ onMounted(() => {
   })
 })
 
+// 拖放的文件（或重新拖入）直接进入处理流程
+watch(
+  () => importUI.pending,
+  (pending) => {
+    if (pending) {
+      importUI.pending = null
+      void processPicked(pending)
+    }
+  },
+  { immediate: true }
+)
+
 function startTimer(): void {
   elapsed.value = 0
   stopTimer()
@@ -62,7 +74,11 @@ async function pick(): Promise<void> {
     return
   }
   if (!picked) return
+  await processPicked(picked)
+}
 
+async function processPicked(picked: { name: string; ext: string; dataBase64: string }): Promise<void> {
+  error.value = ''
   fileName.value = picked.name
   step.value = 'extracting'
   try {
@@ -163,7 +179,7 @@ function toast(msg: string): void {
 
       <template v-if="step === 'choose'">
         <p class="desc">支持 <b>Word（.docx）</b>、<b>文字版 PDF</b>、<b>TXT</b>，文件不超过 20MB。<br />
-        <span class="hint">图片/扫描版 PDF 暂不支持；解析结果请务必检查修正。</span></p>
+        <span class="hint">图片/扫描版 PDF 暂不支持；解析结果请务必检查修正。<br />也可以直接把文件<b>拖进本窗口</b>任意位置。</span></p>
         <button class="big-btn" @click="pick">选择文件…</button>
       </template>
 
@@ -203,7 +219,12 @@ function toast(msg: string): void {
       <template v-else-if="step === 'importing'">
         <p class="desc">
           <template v-if="parseMode === 'ai'">
-            {{ selectedProfileName() }} 正在解析… 已生成 <b>{{ aiChars }}</b> 字 · {{ elapsed }} 秒
+            <template v-if="aiChars > 0">
+              {{ selectedProfileName() }} 正在解析… 已生成 <b>{{ aiChars }}</b> 字 · {{ elapsed }} 秒
+            </template>
+            <template v-else>
+              正在连接 {{ selectedProfileName() }} 并等待模型响应<span class="dots"><i>·</i><i>·</i><i>·</i></span> {{ elapsed }} 秒
+            </template>
           </template>
           <template v-else>正在解析… {{ elapsed }} 秒</template>
         </p>
@@ -414,6 +435,36 @@ function toast(msg: string): void {
   }
   100% {
     left: 100%;
+  }
+}
+
+/* 等待模型首字时的呼吸点 */
+.dots {
+  display: inline-block;
+  margin-left: 2px;
+}
+
+.dots i {
+  font-style: normal;
+  animation: dot-blink 1.2s infinite;
+}
+
+.dots i:nth-child(2) {
+  animation-delay: 0.2s;
+}
+
+.dots i:nth-child(3) {
+  animation-delay: 0.4s;
+}
+
+@keyframes dot-blink {
+  0%,
+  60%,
+  100% {
+    opacity: 0.2;
+  }
+  30% {
+    opacity: 1;
   }
 }
 

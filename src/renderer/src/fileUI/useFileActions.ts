@@ -99,17 +99,9 @@ async function confirmGuard(): Promise<'cancel' | 'discard' | 'save'> {
 
 // ———————————————— 新建 / 打开 ————————————————
 
+/** 新建简历：开一个新窗口承载，当前窗口的简历完全不受影响 */
 export async function newDocAction(): Promise<void> {
-  const choice = await confirmGuard()
-  if (choice === 'cancel') return
-  if (choice === 'save') {
-    const ok = await saveDoc()
-    if (!ok) return
-  }
-  await window.myresume.file.newSession()
-  await replaceDoc(createDefaultDocument(store.doc.meta.template), null, null)
-  startView.visible = false
-  showToast('已新建空白简历')
+  await window.myresume.file.newWindow()
 }
 
 async function openFrom(result: Awaited<ReturnType<typeof window.myresume.file.open>>): Promise<void> {
@@ -174,8 +166,9 @@ async function aboutAction(): Promise<void> {
   )
 }
 
-/** 应用启动时检查未保存草稿 */
+/** 应用启动时检查未保存草稿（新建窗口跳过——恢复只属于应用启动流程） */
 export async function initFileUI(): Promise<void> {
+  if (isNewWindow) return
   try {
     const draft = await window.myresume.file.autorecoverRead()
     if (!draft?.doc) return
@@ -217,16 +210,21 @@ export const modalApi = { onChoose, showToast }
 
 // ———————————————— 导入已有简历 ————————————————
 
-export const importUI = reactive({ open: false })
+export const importUI = reactive({
+  open: false,
+  /** 从拖放直接带进来的文件（对话框打开后立即处理） */
+  pending: null as null | { name: string; ext: string; dataBase64: string }
+})
 
-/** 打开导入流程（脏文档先确认） */
-export async function importDocAction(): Promise<void> {
+/** 打开导入流程（脏文档先确认）；传入 dropped 文件则跳过选择步骤 */
+export async function importDocAction(dropped?: { name: string; ext: string; dataBase64: string }): Promise<void> {
   const choice = await confirmGuard()
   if (choice === 'cancel') return
   if (choice === 'save') {
     const ok = await saveDoc()
     if (!ok) return
   }
+  importUI.pending = dropped ?? null
   importUI.open = true
 }
 
@@ -246,7 +244,10 @@ export async function finishImport(doc: ResumeDocument): Promise<void> {
 
 // ———————————————— 首页（起始页）与 AI 设置 ————————————————
 
-export const startView = reactive({ visible: true })
+/** 新窗口（?new=1）直接进入空白编辑器；普通启动显示首页 */
+const isNewWindow = typeof location !== 'undefined' && new URLSearchParams(location.search).has('new')
+
+export const startView = reactive({ visible: !isNewWindow })
 export const settingsUI = reactive({ open: false })
 
 /** 从编辑器返回首页（当前文档保留在内存，可随时回来） */

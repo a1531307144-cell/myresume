@@ -2,13 +2,14 @@ import { app, BrowserWindow, dialog, ipcMain, shell } from 'electron'
 import { join } from 'path'
 import { registerDialogIpc } from './dialogs'
 import { buildAppMenu, watchMenuRebuild } from './menu'
-import { initFileService, isSessionDirty, registerFileIpc } from './fileService'
+import { destroySession, initFileService, isWindowDirty, registerFileIpc } from './fileService'
 import { registerPdfIpc } from './pdfExporter'
 import { setupUpdater } from './updater'
 import { registerSettingsIpc } from './settings'
 import { registerAiIpc } from './aiService'
 
-function createWindow(): void {
+/** newDoc=true 时直接进入空白编辑器（跳过首页），用于「新建简历」新窗口 */
+function createWindow(options?: { newDoc?: boolean }): void {
   const win = new BrowserWindow({
     width: 1280,
     height: 820,
@@ -26,14 +27,20 @@ function createWindow(): void {
   })
 
   win.on('ready-to-show', () => {
+    if (options?.newDoc) win.setTitle('未命名简历 — 我的简历')
     win.show()
   })
 
-  // 关闭保护：有未保存修改时拦截关闭，先询问
+  // 关闭保护：本窗口有未保存修改时拦截关闭，先询问
   win.on('close', (e) => {
-    if (!isSessionDirty()) return
+    if (!isWindowDirty(win)) return
     e.preventDefault()
     void handleCloseWithDirty(win)
+  })
+
+  // 窗口关闭后清理其会话（文件路径/脏标记）
+  win.webContents.on('destroyed', () => {
+    destroySession(win.webContents.id)
   })
 
   // 外部链接一律交给系统默认浏览器，不在应用内开新窗口
@@ -43,9 +50,10 @@ function createWindow(): void {
   })
 
   if (process.env['ELECTRON_RENDERER_URL']) {
-    void win.loadURL(process.env['ELECTRON_RENDERER_URL'])
+    const url = options?.newDoc ? `${process.env['ELECTRON_RENDERER_URL']}/?new=1` : process.env['ELECTRON_RENDERER_URL']
+    void win.loadURL(url)
   } else {
-    void win.loadFile(join(__dirname, '../renderer/index.html'))
+    void win.loadFile(join(__dirname, '../renderer/index.html'), options?.newDoc ? { query: { new: '1' } } : undefined)
   }
 }
 
@@ -72,10 +80,14 @@ async function handleCloseWithDirty(win: BrowserWindow): Promise<void> {
 // 预加载 API 白名单（只读接口）
 ipcMain.handle('app:getVersion', () => app.getVersion())
 
-// 渲染进程保存完成后请求关闭（绕过 close 拦截）
-ipcMain.handle('app:close-window', () => {
-  const win = BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0]
-  win?.destroy()
+// 渲染进程保存完成后请求关闭（绕过 close 拦截；只关发起请求的窗口）
+ipcMain.handle('app:close-window', (e) => {
+  BrowserWindow.fromWebContents(e.sender)?.destroy()
+})
+
+// 多窗口：「新建简历」开新窗口，当前窗口不受影响
+ipcMain.handle('file:new-window', () => {
+  createWindow({ newDoc: true })
 })
 
 app.whenReady().then(() => {

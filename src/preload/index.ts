@@ -1,4 +1,4 @@
-import { contextBridge, ipcRenderer } from 'electron'
+import { contextBridge, ipcRenderer, webUtils } from 'electron'
 import type {
   AiConfigView,
   AiParseResult,
@@ -28,7 +28,9 @@ const api = {
     /** 返回原图 dataUrl（渲染进程负责压缩），取消返回 null */
     pickPhoto: (): Promise<{ dataUrl: string } | null> => ipcRenderer.invoke('dialog:pickPhoto'),
     /** 选择要导入的简历文件，取消返回 null */
-    pickImportFile: (): Promise<PickedImportFile | null> => ipcRenderer.invoke('dialog:pickImportFile')
+    pickImportFile: (): Promise<PickedImportFile | null> => ipcRenderer.invoke('dialog:pickImportFile'),
+    /** 读取拖放进来的简历文件（扩展名白名单 + 大小限制在主进程校验） */
+    readDropped: (path: string): Promise<PickedImportFile> => ipcRenderer.invoke('dialog:readDropped', path)
   },
   ai: {
     getConfig: (): Promise<AiConfigView> => ipcRenderer.invoke('ai:getConfig'),
@@ -50,6 +52,10 @@ const api = {
     }
   },
   file: {
+    /** 多窗口：新建简历 = 开新窗口（当前窗口不受影响） */
+    newWindow: (): Promise<void> => ipcRenderer.invoke('file:new-window'),
+    /** 拖放文件的系统路径（Electron 官方 webUtils 方式，路径仅用于交回主进程读取） */
+    getPathForFile: (file: File): string => webUtils.getPathForFile(file),
     newSession: (): Promise<void> => ipcRenderer.invoke('file:new'),
     open: (): Promise<OpenResult> => ipcRenderer.invoke('file:open'),
     openRecent: (path: string): Promise<OpenResult> => ipcRenderer.invoke('file:openRecent', path),
