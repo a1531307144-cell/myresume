@@ -41,6 +41,7 @@ const api = {
   },
   update: {
     check: (): Promise<void> => ipcRenderer.invoke('update:check'),
+    download: (): Promise<void> => ipcRenderer.invoke('update:download'),
     install: (): Promise<void> => ipcRenderer.invoke('update:install'),
     onStatus: (cb: (status: UpdateStatus) => void): void => {
       ipcRenderer.on('update:status', (_e, status: UpdateStatus) => cb(status))

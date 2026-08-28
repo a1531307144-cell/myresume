@@ -2,7 +2,7 @@
 import { onBeforeUnmount, onMounted, reactive } from 'vue'
 
 const state = reactive({
-  phase: 'idle' as 'idle' | 'checking' | 'downloading' | 'ready',
+  phase: 'idle' as 'idle' | 'checking' | 'offered' | 'downloading' | 'ready',
   version: '',
   percent: 0,
   transient: '' // 手动检查的一次性提示（几秒后消失）
@@ -27,9 +27,9 @@ function onStatus(s: {
   if (s.type === 'checking') {
     if (state.phase === 'idle') state.phase = 'checking'
   } else if (s.type === 'available') {
+    // 只提示，等用户决定是否下载
     state.version = s.version ?? ''
-    state.phase = 'downloading'
-    state.percent = 0
+    state.phase = 'offered'
   } else if (s.type === 'downloading') {
     state.phase = 'downloading'
     state.percent = s.percent ?? 0
@@ -41,9 +41,21 @@ function onStatus(s: {
     if (state.phase === 'checking') state.phase = 'idle'
   } else if (s.type === 'error') {
     if (state.phase === 'checking') state.phase = 'idle'
-    if (s.manual) showTransient('检查更新失败，请稍后重试')
+    if (state.phase === 'downloading') {
+      state.phase = state.version ? 'offered' : 'idle'
+      showTransient('下载更新失败，请稍后重试')
+    } else if (s.manual) {
+      showTransient('检查更新失败，请稍后重试')
+    }
     // 自动检查失败：完全静默
   }
+}
+
+/** 提示框点「下载安装」 */
+function download(): void {
+  state.phase = 'downloading'
+  state.percent = 0
+  void window.myresume.update.download()
 }
 
 function install(): void {
@@ -62,6 +74,17 @@ onBeforeUnmount(() => clearTimeout(transientTimer))
 </script>
 
 <template>
+  <transition name="up">
+    <div v-if="state.phase === 'offered'" class="update-card">
+      <div class="update-title">🎉 发现新版本 v{{ state.version }}</div>
+      <p class="update-text">是否现在下载？下载完成后你可以选择立即重启安装，或退出软件时自动安装。</p>
+      <div class="update-btns">
+        <button class="ub plain" @click="later">忽略</button>
+        <button class="ub primary" @click="download">下载安装</button>
+      </div>
+    </div>
+  </transition>
+
   <transition name="up">
     <div v-if="state.phase === 'ready'" class="update-card">
       <div class="update-title">🎉 新版本 v{{ state.version }} 已就绪</div>

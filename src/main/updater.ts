@@ -3,8 +3,8 @@ import { autoUpdater } from 'electron-updater'
 import type { UpdateStatus } from '../shared/ipc'
 
 /**
- * 自动更新：启动 3 秒后静默检查，自动下载，下载完由用户决定何时安装。
- * 原则：更新永远不干扰编辑——任何网络错误只写日志，零弹窗。
+ * 自动更新：启动 3 秒后静默检查；发现新版本只提示，由用户决定是否下载安装。
+ * 原则：更新永远不干扰编辑、不擅自下载——任何网络错误只写日志，零弹窗。
  * 仅打包版启用（开发版检查更新无意义且会报错）。
  */
 
@@ -19,7 +19,7 @@ function broadcast(payload: UpdateStatus): void {
 export function setupUpdater(): void {
   if (!app.isPackaged) return
 
-  autoUpdater.autoDownload = true
+  autoUpdater.autoDownload = false
   autoUpdater.autoInstallOnAppQuit = true
   autoUpdater.logger = console
 
@@ -47,6 +47,13 @@ export function setupUpdater(): void {
     manualCheck = true
     autoUpdater.checkForUpdates().catch((err) => {
       console.warn('手动检查更新失败', err)
+    })
+  })
+
+  // 用户在提示框点「下载安装」后才开始下载
+  ipcMain.handle('update:download', () => {
+    autoUpdater.downloadUpdate().catch((err) => {
+      console.warn('下载更新失败', err)
     })
   })
 
