@@ -92,7 +92,9 @@ async function main() {
     })()`)
 
   // ———————— 0. 应用就绪 ————————
-  await sleep(700)
+  // 先整页重载，冲刷掉可能正在进行的 HMR 热更新（否则会在中途重置状态造成假故障）
+  await evalJs(`location.reload()`)
+  await sleep(3200)
   check('应用已挂载', await evalJs(`!!document.querySelector('.app-topbar')`))
   check('AI 自测钩子可用', Boolean(await evalJs(`typeof window.__mrTestAi === 'object'`)))
 

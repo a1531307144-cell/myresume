@@ -28,6 +28,11 @@ jobs:
       - name: Run tests
         run: npm test
 
+      # 隐私闸门：扫到手机号 / 邮箱 / 密钥 / 内嵌图片 / 本机路径 / 专属敏感词就直接失败。
+      # 这一步失败 = 发不出 Release，不依赖人「记得检查」。
+      - name: Privacy check
+        run: node scripts/privacy-check.mjs
+
       - name: Build renderer/main/preload
         run: npm run build
 

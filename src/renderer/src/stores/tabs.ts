@@ -1,5 +1,6 @@
 import { computed, nextTick, reactive, ref, watch } from 'vue'
 import type { ResumeDocument, TemplateId } from '@shared/schema'
+import { isTemplateId } from '@shared/schema'
 import type { SaveResult } from '@shared/ipc'
 import { createDefaultDocument } from '@shared/defaults'
 import { isSectionEmpty } from '@shared/sectionDefs'
@@ -36,7 +37,7 @@ export interface DocTab {
 export function initialTemplate(): TemplateId {
   try {
     const saved = localStorage.getItem('myresume.lastTemplate')
-    if (saved === 'law-classic' || saved === 'simple-modern') return saved
+    if (isTemplateId(saved)) return saved
   } catch {
     /* 忽略读取失败 */
   }

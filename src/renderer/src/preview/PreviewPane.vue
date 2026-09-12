@@ -1,11 +1,12 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useResumeStore } from '@renderer/stores/resume'
-import { TEMPLATES } from './templates'
+import { getTemplate } from './templates'
 import EmptyPreview from './EmptyPreview.vue'
 
 const { store, isDocumentEmpty } = useResumeStore()
-const tpl = computed(() => TEMPLATES[store.doc.meta.template])
+// getTemplate 带兜底：文档里的模板 id 失效时退回法学正式风，而不是整页崩掉
+const tpl = computed(() => getTemplate(store.doc.meta.template))
 
 const wrapEl = ref<HTMLElement | null>(null)
 const zoom = ref(0.7)

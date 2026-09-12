@@ -9,6 +9,8 @@ import type { UpdateStatus } from '../shared/ipc'
  */
 
 let manualCheck = false
+/** 上次**自动**检查更新是否失败。只为「关于」里留一行小字，绝不弹窗打扰。 */
+let lastAutoCheckFailed = false
 
 function broadcast(payload: UpdateStatus): void {
   for (const win of BrowserWindow.getAllWindows()) {
@@ -17,6 +19,18 @@ function broadcast(payload: UpdateStatus): void {
 }
 
 export function setupUpdater(): void {
+  // 「关于」对话框读取：自动检查失败时提示「是网络问题」而不是让人以为「没有新版」。
+  // 开发版也要注册（返回 false），否则渲染层调用会直接报错。
+  ipcMain.handle('update:getCheckInfo', () => ({ lastAutoCheckFailed }))
+
+  // 仅开发模式：把「自动检查失败」标志置位/复位，用于实机验证「关于」的两种形态
+  if (!app.isPackaged) {
+    ipcMain.handle('update:__testSetCheckFailed', (_e, v: unknown) => {
+      lastAutoCheckFailed = Boolean(v)
+    })
+  }
+
+  // 仅打包版启用更新检查（开发版无 app-update.yml，检查必然失败且无意义）
   if (!app.isPackaged) return
 
   autoUpdater.autoDownload = false
@@ -24,7 +38,10 @@ export function setupUpdater(): void {
   autoUpdater.logger = console
 
   autoUpdater.on('checking-for-update', () => broadcast({ type: 'checking' }))
-  autoUpdater.on('update-available', (info) => broadcast({ type: 'available', version: info.version }))
+  autoUpdater.on('update-available', (info) => {
+    lastAutoCheckFailed = false
+    broadcast({ type: 'available', version: info.version })
+  })
   autoUpdater.on('download-progress', (p) => broadcast({ type: 'downloading', percent: Math.round(p.percent) }))
   autoUpdater.on('update-downloaded', (info) => {
     manualCheck = false
@@ -33,11 +50,14 @@ export function setupUpdater(): void {
   autoUpdater.on('update-not-available', () => {
     const manual = manualCheck
     manualCheck = false
+    lastAutoCheckFailed = false
     broadcast({ type: 'not-available', manual })
   })
   autoUpdater.on('error', (err) => {
     const manual = manualCheck
     manualCheck = false
+    // 自动检查失败：记下来供「关于」展示，但界面上完全静默
+    if (!manual) lastAutoCheckFailed = true
     console.warn('更新失败（不影响使用）', err)
     broadcast({ type: 'error', manual })
   })

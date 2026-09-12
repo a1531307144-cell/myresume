@@ -2,7 +2,24 @@
 
 export const SCHEMA_VERSION = 1
 
-export type TemplateId = 'law-classic' | 'simple-modern'
+/**
+ * 全部模板 id。这里同时给出「运行时数组」，因为 store 与文件迁移需要在不引入
+ * Vue 组件的前提下校验模板 id（旧文档可能带着已不存在的模板值）。
+ */
+export const TEMPLATE_IDS = [
+  'law-classic',
+  'simple-modern',
+  'sidebar-dark',
+  'timeline-bilingual',
+  'grid-table',
+  'top-band'
+] as const
+
+export type TemplateId = (typeof TEMPLATE_IDS)[number]
+
+export function isTemplateId(v: unknown): v is TemplateId {
+  return typeof v === 'string' && (TEMPLATE_IDS as readonly string[]).includes(v)
+}
 
 /** 5 种数据类别（SectionType）支撑 10 种板块预设。实习/研究/项目/校园共用 experience，技能/荣誉共用 listBlock。 */
 export type SectionType = 'basicInfo' | 'education' | 'experience' | 'listBlock' | 'textBlock'

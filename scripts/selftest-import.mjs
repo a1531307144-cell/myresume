@@ -95,7 +95,8 @@ async function main() {
   }
   console.log('模型配置状态:', JSON.stringify(state))
 
-  // 4. 点击 AI 解析，每秒记录画面状态（清单点亮数/字数/错误），共 40 秒
+  // 4. 点击 AI 解析后密集采样（每 300ms 一次）：模型快的时候 2 秒就返回，
+  //    每秒采样会整段错过流式窗口，导致「明明成功却报失败」的假故障
   const clicked = await evalJs(`(() => { const el = document.querySelector('.ai-run'); if (!el) return 'NO_ELEMENT'; el.click(); return 'CLICKED' })()`)
   console.log('点击 AI 解析:', clicked)
   const snap = () =>
@@ -110,23 +111,48 @@ async function main() {
         dialogGone: !document.querySelector('.import-card')
       }
     })()`)
-  const timeline = []
-  for (let i = 0; i < 40; i++) {
-    const s = await snap()
-    timeline.push({ t: i + 1, ...s })
-    if (s.dialogGone || s.error) break
-    await sleep(1000)
-  }
-  for (const t of timeline) console.log(JSON.stringify(t))
 
-  const last = timeline[timeline.length - 1]
-  const everChipsOn = timeline.some((t) => t.chipsOn > 0)
-  const everStreamed = timeline.some((t) => /已生成/.test(t.desc))
+  let everChipsOn = false
+  let everStreamed = false
+  let last = null
+  let prevKey = ''
+  const started = Date.now()
+  while (Date.now() - started < 60_000) {
+    const s = await snap()
+    last = s
+    if (s.chipsOn > 0) everChipsOn = true
+    if (/已生成/.test(s.desc)) everStreamed = true
+    // 只在状态发生变化时打印，避免刷屏
+    const key = `${s.importing}|${s.chipsOn}|${/已生成/.test(s.desc)}|${s.dialogGone}|${s.error}`
+    if (key !== prevKey) {
+      console.log(`[${((Date.now() - started) / 1000).toFixed(1)}s] ${JSON.stringify(s)}`)
+      prevKey = key
+    }
+    if (s.dialogGone || s.error) break
+    await sleep(300)
+  }
+
+  // 对话框正常关闭 = 导入成功；此时编辑器里应该已经有板块了
+  const sectionCards = await evalJs(`document.querySelectorAll('.section-card').length`)
+  const tabNames = await evalJs(`window.__mrTestTabs.list().map((t) => t.name)`)
+
+  const passed = everChipsOn && everStreamed && last?.dialogGone && !last?.error && sectionCards > 0
   console.log('=== 结论 ===')
   console.log('清单出现过点亮:', everChipsOn)
   console.log('出现过「已生成 N 字」:', everStreamed)
+  console.log('导入后编辑器板块数:', sectionCards, '| 标签:', JSON.stringify(tabNames))
   console.log('最终状态:', JSON.stringify(last))
+  console.log(passed ? '全部通过' : '失败')
   if (consoleErrors.length) console.log('控制台异常:\n' + consoleErrors.slice(0, 3).join('\n———\n'))
+
+  // 收尾：关掉本次自测产生的简历标签并清掉草稿，别给下一次运行/用户留下垃圾
+  await evalJs(`window.__mrTestTabs.list().filter((t) => t.kind === 'doc').forEach((t) => window.__mrTestTabs.close(t.id))`)
+  await sleep(500)
+  await evalJs(`(async () => {
+    const all = await window.myresume.file.autorecoverRead()
+    for (const d of all) await window.myresume.file.autorecoverClear(d.id)
+  })()`)
+  console.log('收尾后标签:', JSON.stringify(await evalJs(`window.__mrTestTabs.list().map((t) => t.name)`)))
   ws.close()
 }
 

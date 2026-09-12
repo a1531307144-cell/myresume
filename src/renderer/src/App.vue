@@ -3,7 +3,7 @@ import { onBeforeUnmount, onMounted, ref } from 'vue'
 import type { TemplateId } from '@shared/schema'
 import { store } from './stores/resume'
 import { isHomeTab } from './stores/tabs'
-import { TEMPLATES } from './preview/templates'
+import { TEMPLATE_LIST, getTemplate } from './preview/templates'
 import EditorPanel from './editor/EditorPanel.vue'
 import PreviewPane from './preview/PreviewPane.vue'
 import ConfirmModal from './fileUI/ConfirmModal.vue'
@@ -88,12 +88,12 @@ onMounted(async () => {
   void initFileUI()
 })
 
-const templateOptions = Object.values(TEMPLATES)
+const templateOptions = TEMPLATE_LIST
 
 function onTemplateChange(e: Event): void {
-  const id = (e.target as HTMLSelectElement).value as TemplateId
-  if (TEMPLATES[id].available) {
-    store.doc.meta.template = id
+  const tpl = getTemplate((e.target as HTMLSelectElement).value)
+  if (tpl.available) {
+    store.doc.meta.template = tpl.id
   }
 }
 </script>

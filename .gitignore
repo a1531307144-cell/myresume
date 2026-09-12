@@ -5,3 +5,6 @@ dist/
 *.local
 .DS_Store
 .vite/
+
+# 本机专属隐私敏感词（绝不提交）
+scripts/.privacy-terms

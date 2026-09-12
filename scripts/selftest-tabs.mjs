@@ -92,7 +92,11 @@ async function main() {
   const readInput = () => evalJs(`document.querySelector('.app-editor .ed-inp')?.value ?? null`)
 
   // ———————— 0. 应用挂载（模板报错会在这里立刻暴露，而不是等到超时） ————————
-  await sleep(600)
+  // 先整页重载一次：把可能正在进行的 HMR 热更新冲刷干净。
+  // 否则改完代码紧接着跑本脚本时，重载会在中途重置标签，造成「首跑失败、再跑通过」的假故障。
+  await evalJs(`location.reload()`)
+  await sleep(3200)
+
   check('应用已挂载（#app 有内容）', await evalJs(`(document.querySelector('#app')?.children.length ?? 0) > 0`))
   check('顶栏存在', await evalJs(`!!document.querySelector('.app-topbar')`))
   check('标签条存在', await evalJs(`!!document.querySelector('.tab-bar')`))

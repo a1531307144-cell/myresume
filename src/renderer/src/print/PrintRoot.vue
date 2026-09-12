@@ -1,10 +1,12 @@
 <script setup lang="ts">
-import { nextTick, onMounted, ref } from 'vue'
+import { computed, nextTick, onMounted, ref } from 'vue'
 import type { ResumeDocument } from '@shared/schema'
 import { createDefaultDocument } from '@shared/defaults'
-import { TEMPLATES } from '../preview/templates'
+import { getTemplate } from '../preview/templates'
 
 const doc = ref<ResumeDocument>(createDefaultDocument())
+/** 带兜底取模板，避免失效的模板 id 让打印窗口白屏（会导致导出卡到超时） */
+const template = computed(() => getTemplate(doc.value.meta.template))
 
 onMounted(() => {
   window.myresume.print.onDoc(async (payload) => {
@@ -39,5 +41,5 @@ async function waitForAssets(): Promise<void> {
 </script>
 
 <template>
-  <component :is="TEMPLATES[doc.meta.template].page" :doc="doc" />
+  <component :is="template.page" :doc="doc" />
 </template>

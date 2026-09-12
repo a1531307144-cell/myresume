@@ -1,6 +1,8 @@
 import { reactive } from 'vue'
 import type { MenuAction } from '@shared/ipc'
 import type { DraftItem } from '@shared/ipc'
+import type { UpdateCheckInfo } from '@shared/about'
+import { buildAboutText } from '@shared/about'
 import type { ResumeDocument, TemplateId } from '@shared/schema'
 import { createDefaultDocument } from '@shared/defaults'
 import { uid } from '@shared/id'
@@ -280,10 +282,13 @@ export function dismissDraftNotice(): void {
 
 async function aboutAction(): Promise<void> {
   const version = await window.myresume.app.getVersion()
-  await infoBox(
-    '关于「我的简历」',
-    `我的简历 v${version}\n简单好用的桌面简历编辑器\n\nMIT 开源\nhttps://github.com/a1531307144-cell/myresume`
-  )
+  let checkInfo: UpdateCheckInfo | null = null
+  try {
+    checkInfo = await window.myresume.update.getCheckInfo()
+  } catch {
+    /* 取不到就不显示那行小字，不影响「关于」本身 */
+  }
+  await infoBox('关于「我的简历」', buildAboutText(version, checkInfo))
 }
 
 /** 应用启动时检查未保存草稿：左下角提示 10 秒，不理会就自动消失（草稿保留，下次再提示） */
@@ -386,7 +391,13 @@ if (import.meta.env.DEV && typeof window !== 'undefined') {
     },
     /** 自测用：直接从磁盘路径打开一份简历（跳过系统对话框，才能自动断言存盘结果） */
     openPath: (path: string) =>
-      openFrom((tabId) => window.myresume.file.__testOpenPath(tabId, path))
+      openFrom((tabId) => window.myresume.file.__testOpenPath(tabId, path)),
+    /** 自测用：触发「关于」对话框（不返回 Promise——它要等用户点按钮才结束，返回会死等） */
+    about: () => {
+      void aboutAction()
+    },
+    /** 自测用：置位/复位「自动检查更新失败」标志（仅开发模式有对应通道） */
+    setUpdateCheckFailed: (v: boolean) => window.myresume.update.__testSetCheckFailed(v)
   }
 }
 

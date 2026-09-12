@@ -2,6 +2,8 @@
 import { computed, onMounted, ref } from 'vue'
 import type { RecentItem } from '@shared/ipc'
 import { activateTab, tabs } from '@renderer/stores/tabs'
+import { TEMPLATE_LIST } from '@renderer/preview/templates'
+import TemplateMock from './TemplateMock.vue'
 import { importDocAction, openDocAction, openRecentAction, startWithTemplate } from './useFileActions'
 
 const recent = ref<RecentItem[]>([])
@@ -48,31 +50,10 @@ function fmtDate(iso: string): string {
       </button>
 
       <div class="start-cards">
-        <button class="start-card" @click="startWithTemplate('law-classic')">
-          <div class="card-preview law">
-            <span class="mock-photo"></span>
-            <span class="mock-name"></span>
-            <span class="mock-line w70"></span>
-            <span class="mock-gap"></span>
-            <span class="mock-heading"></span>
-            <span class="mock-line"></span>
-            <span class="mock-line w80"></span>
-          </div>
-          <div class="card-name">法学正式风</div>
-          <div class="card-desc">宋体排版 · 黑白稳重 · 照片右上角<br />法学生求职首选</div>
-        </button>
-
-        <button class="start-card" @click="startWithTemplate('simple-modern')">
-          <div class="card-preview simple">
-            <span class="mock-name accent"></span>
-            <span class="mock-line w50"></span>
-            <span class="mock-gap"></span>
-            <span class="mock-heading bar"></span>
-            <span class="mock-line"></span>
-            <span class="mock-line w85"></span>
-          </div>
-          <div class="card-name">通用简约风</div>
-          <div class="card-desc">现代无衬线 · 留白呼吸 · 靛蓝点缀<br />适配任何专业与行业</div>
+        <button v-for="t in TEMPLATE_LIST" :key="t.id" class="start-card" @click="startWithTemplate(t.id)">
+          <TemplateMock :kind="t.mock" :accent="t.accent" />
+          <div class="card-name">{{ t.name }}</div>
+          <div class="card-desc">{{ t.desc }}</div>
         </button>
       </div>
 
@@ -80,7 +61,9 @@ function fmtDate(iso: string): string {
 
       <div class="start-recent">
         <div class="recent-head">最近打开</div>
-        <button v-if="recent.length === 0" class="recent-empty" @click="openDocAction()">还没有文件——点此打开或从上方模板开始</button>
+        <button v-if="recent.length === 0" class="recent-empty" @click="openDocAction()">
+          还没有文件——点此打开或从上方模板开始
+        </button>
         <button v-for="item in recent.slice(0, 5)" :key="item.path" class="recent-item" @click="openRecentAction(item.path)">
           <span class="recent-name">{{ item.name }}</span>
           <span class="recent-date">{{ fmtDate(item.updatedAt) }}</span>
@@ -112,7 +95,7 @@ function fmtDate(iso: string): string {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  padding: 40px 24px 24px;
+  padding: 36px 24px 24px;
 }
 
 .start-brand {
@@ -165,131 +148,52 @@ function fmtDate(iso: string): string {
 }
 
 .start-cards {
-  display: flex;
-  gap: 22px;
-  margin-top: 34px;
-  flex-wrap: wrap;
-  justify-content: center;
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 16px;
+  width: 780px;
+  max-width: calc(100vw - 48px);
+  margin-top: 30px;
 }
 
 .start-card {
-  width: 250px;
-  padding: 12px 12px 16px;
+  padding: 10px 10px 13px;
   background: #fff;
   border: 1px solid #e8e8f1;
-  border-radius: 14px;
+  border-radius: 12px;
   cursor: pointer;
   text-align: left;
   transition: all 0.16s ease;
 }
 
 .start-card:hover {
-  transform: translateY(-4px);
-  box-shadow: 0 14px 34px rgba(60, 70, 140, 0.16);
+  transform: translateY(-3px);
+  box-shadow: 0 12px 28px rgba(60, 70, 140, 0.15);
   border-color: #c9cdf5;
 }
 
-.card-preview {
-  height: 170px;
-  border-radius: 9px;
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  padding: 18px 20px;
-  position: relative;
-  overflow: hidden;
-}
-
-.card-preview.law {
-  background: #fff;
-  border: 1px solid #dcdce6;
-}
-
-.card-preview.simple {
-  background: linear-gradient(160deg, #f7f8ff, #eef1fc);
-  border: 1px solid #dfe4f5;
-}
-
-.mock-photo {
-  position: absolute;
-  top: 16px;
-  right: 16px;
-  width: 26px;
-  height: 34px;
-  border: 1px solid #b9b9c6;
-  background: #fbfbfd;
-}
-
-.mock-name {
-  width: 84px;
-  height: 13px;
-  background: #2c2c34;
-  border-radius: 2px;
-}
-
-.mock-name.accent {
-  background: linear-gradient(90deg, #667eea, #9b8ae0);
-}
-
-.mock-heading {
-  width: 56px;
-  height: 7px;
-  background: #2c2c34;
-  border-radius: 2px;
-}
-
-.mock-heading.bar {
-  background: #667eea;
-}
-
-.mock-line {
-  height: 6px;
-  border-radius: 3px;
-  background: #dcdce6;
-}
-
-.w85 {
-  width: 85%;
-}
-
-.w80 {
-  width: 80%;
-}
-
-.w70 {
-  width: 70%;
-}
-
-.w50 {
-  width: 50%;
-}
-
-.mock-gap {
-  height: 10px;
-}
-
 .card-name {
-  margin-top: 12px;
-  font-size: 15px;
+  margin-top: 10px;
+  font-size: 14px;
   font-weight: 600;
   color: #24242e;
 }
 
 .card-desc {
-  margin-top: 5px;
-  font-size: 12px;
-  line-height: 1.65;
+  margin-top: 4px;
+  font-size: 11.5px;
+  line-height: 1.6;
   color: #9a9aae;
 }
 
 .start-recent {
-  margin-top: 28px;
-  width: 524px;
+  margin-top: 26px;
+  width: 780px;
   max-width: calc(100vw - 48px);
 }
 
 .import-entry {
-  margin-top: 22px;
+  margin-top: 20px;
   border: none;
   background: transparent;
   font-size: 13px;
