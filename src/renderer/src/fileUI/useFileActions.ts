@@ -1,11 +1,32 @@
 import { reactive } from 'vue'
 import type { MenuAction } from '@shared/ipc'
+import type { DraftItem } from '@shared/ipc'
 import type { ResumeDocument, TemplateId } from '@shared/schema'
 import { createDefaultDocument } from '@shared/defaults'
-import { isSectionEmpty } from '@shared/sectionDefs'
-import { replaceDoc, store } from '@renderer/stores/resume'
+import { uid } from '@shared/id'
+import {
+  activeTab,
+  activeTabId,
+  activateTab,
+  addDocTab,
+  cancelAutosave,
+  ensureHomeTab,
+  findTabByPath,
+  initialTemplate,
+  removeTab,
+  replaceTabDoc,
+  reusableBlankTab,
+  tabs
+} from '@renderer/stores/tabs'
+import type { DocTab } from '@renderer/stores/tabs'
 
-/** 文件操作流程层：确认弹窗、菜单动作、保存/打开/导出协调（渲染侧唯一入口） */
+/**
+ * 文件操作流程层：确认弹窗、菜单动作、保存/打开/导出协调（渲染侧唯一入口）。
+ *
+ * 单窗口多标签下的两条铁律：
+ * 1. **任何异步动作都必须先捕获 tab 变量**，await 之后只碰这个 tab —— 用户可能已经切走了标签
+ * 2. **打开/导入一律开新标签**，因此不再需要「先问要不要保存当前简历」（只有关标签才需要）
+ */
 
 interface ModalButton {
   label: string
@@ -52,8 +73,8 @@ function showToast(text: string): void {
   }, 3200)
 }
 
-function plainDoc(): ResumeDocument {
-  return JSON.parse(JSON.stringify(store.doc)) as ResumeDocument
+function plainDoc(tab: DocTab): ResumeDocument {
+  return JSON.parse(JSON.stringify(tab.doc)) as ResumeDocument
 }
 
 async function infoBox(title: string, text: string): Promise<void> {
@@ -62,79 +83,159 @@ async function infoBox(title: string, text: string): Promise<void> {
 
 // ———————————————— 保存 ————————————————
 
+/** 保存当前标签；as=true 或从未保存过则走「另存为」 */
 export async function saveDoc(as = false): Promise<boolean> {
-  const doc = plainDoc()
-  const useAs = as || !store.filePath
-  store.saveStatus = 'saving'
-  const r = useAs ? await window.myresume.file.saveAs(doc) : await window.myresume.file.save(doc)
+  const tab = activeTab.value
+  if (tab.kind !== 'doc') return false
+  const doc = plainDoc(tab)
+  const useAs = as || !tab.filePath
+  tab.saveStatus = 'saving'
+  const r = useAs
+    ? await window.myresume.file.saveAs(doc, tab.id)
+    : await window.myresume.file.save(doc, tab.id)
 
   if (!r || r.canceled) {
-    store.saveStatus = store.dirty ? (store.filePath ? 'dirty' : 'draft') : 'saved'
+    tab.saveStatus = tab.dirty ? (tab.filePath ? 'dirty' : 'draft') : 'saved'
     return false
   }
   if (r.error) {
-    store.saveStatus = 'error'
+    tab.saveStatus = 'error'
     await infoBox('保存失败', r.error)
     return false
   }
-  store.filePath = r.path!
-  store.fileName = r.name!
-  store.dirty = false
-  store.saveStatus = 'saved'
-  void window.myresume.file.setDirty(false)
+  tab.filePath = r.path!
+  tab.fileName = r.name!
+  tab.dirty = false
+  tab.saveStatus = 'saved'
+  void window.myresume.file.setDirty(false, tab.id)
   showToast(`已保存：${r.name}`)
   return true
 }
 
-/** 脏文档保护：取消 / 不保存 / 保存 */
-async function confirmGuard(): Promise<'cancel' | 'discard' | 'save'> {
-  if (!store.dirty) return 'discard'
-  const v = await ask('未保存的修改', '当前简历有未保存的修改。', [
-    { label: '取消', value: 'cancel' },
-    { label: '不保存', value: 'discard', kind: 'danger' },
-    { label: '保存', value: 'save', kind: 'primary' }
-  ])
-  return v as 'cancel' | 'discard' | 'save'
+/** 保存指定标签；从未保存过则弹「另存为」。返回 false = 用户取消或出错。 */
+async function saveTabInteractive(tab: DocTab): Promise<boolean> {
+  if (!tab.filePath) {
+    const r = await window.myresume.file.saveAs(plainDoc(tab), tab.id)
+    if (!r || r.canceled) return false
+    if (r.error) {
+      await infoBox('保存失败', r.error)
+      return false
+    }
+    tab.filePath = r.path!
+    tab.fileName = r.name!
+    tab.dirty = false
+    tab.saveStatus = 'saved'
+    void window.myresume.file.setDirty(false, tab.id)
+    return true
+  }
+  const r = await window.myresume.file.save(plainDoc(tab), tab.id)
+  if (r?.error) {
+    tab.saveStatus = 'error'
+    await infoBox('保存失败', r.error)
+    return false
+  }
+  if (r && !r.canceled) {
+    tab.dirty = false
+    tab.saveStatus = 'saved'
+    void window.myresume.file.setDirty(false, tab.id)
+  }
+  return true
 }
 
-// ———————————————— 新建 / 打开 ————————————————
+/** 保存所有未保存的标签（退出前用）；任一失败/取消即中止 */
+export async function saveAllDirtyTabs(): Promise<boolean> {
+  for (const tab of [...tabs]) {
+    if (tab.kind !== 'doc' || !tab.dirty) continue
+    cancelAutosave(tab.id)
+    if (!(await saveTabInteractive(tab))) return false
+  }
+  return true
+}
 
-/** 新建简历：开一个新窗口承载，当前窗口的简历完全不受影响 */
+// ———————————————— 新建 / 打开 / 关闭 ————————————————
+
+/** 新建简历：开一个新标签（当前标签完全不受影响） */
 export async function newDocAction(): Promise<void> {
-  await window.myresume.file.newWindow()
+  const tab = addDocTab(createDefaultDocument(initialTemplate()), null, null)
+  await activateTab(tab.id)
 }
 
-async function openFrom(result: Awaited<ReturnType<typeof window.myresume.file.open>>): Promise<void> {
-  if (!result || result.canceled) return
-  if (result.error) {
-    await infoBox('打开失败', result.error)
+/** 把文档放进一个标签：优先复用当前空白标签，避免点一次打开就多一个空标签 */
+async function placeDoc(
+  doc: ResumeDocument,
+  path: string | null,
+  name: string | null,
+  tabId: string
+): Promise<DocTab> {
+  const reusable = tabs.find((t) => t.id === tabId)
+  if (reusable && reusable.kind === 'doc' && !reusable.filePath) {
+    await replaceTabDoc(reusable, doc, path, name)
+    return reusable
+  }
+  return addDocTab(doc, path, name, tabId)
+}
+
+/**
+ * 打开文件/最近文件的公共流程。
+ * 标签 id 必须**先**生成再交给主进程（主进程按 tabId 存会话），
+ * 若复用空白标签则直接用它的 id，这样两边始终指着同一个标签。
+ */
+async function openFrom(
+  fetch: (tabId: string) => Promise<Awaited<ReturnType<typeof window.myresume.file.open>>>
+): Promise<void> {
+  const reusable = reusableBlankTab()
+  const tabId = reusable?.id ?? uid()
+  const r = await fetch(tabId)
+  if (!r || r.canceled) return
+  if (r.error) {
+    await infoBox('打开失败', r.error)
     return
   }
-  await replaceDoc(result.doc!, result.path!, result.name!)
-  startView.visible = false
-  showToast(`已打开：${result.name}`)
+  // 同一份文件已经在别的标签里打开 → 切过去，不再开新标签
+  const already = findTabByPath(r.path!)
+  if (already) {
+    if (tabId !== already.id) void window.myresume.file.closeTab(tabId)
+    await activateTab(already.id)
+    showToast(`「${already.fileName ?? r.name}」已经打开，已切换过去`)
+    return
+  }
+  const tab = await placeDoc(r.doc!, r.path!, r.name!, tabId)
+  await activateTab(tab.id)
+  showToast(`已打开：${r.name}`)
 }
 
 export async function openDocAction(): Promise<void> {
-  const choice = await confirmGuard()
-  if (choice === 'cancel') return
-  if (choice === 'save') {
-    const ok = await saveDoc()
-    if (!ok) return
-  }
-  const r = await window.myresume.file.open()
-  await openFrom(r)
+  return openFrom((tabId) => window.myresume.file.open(tabId))
 }
 
 export async function openRecentAction(path: string): Promise<void> {
-  const choice = await confirmGuard()
-  if (choice === 'cancel') return
-  if (choice === 'save') {
-    const ok = await saveDoc()
-    if (!ok) return
+  return openFrom((tabId) => window.myresume.file.openRecent(tabId, path))
+}
+
+/** 关闭标签：脏文档先问；保存/丢弃后再关 */
+export async function closeTabAction(id = activeTabId.value): Promise<void> {
+  const tab = tabs.find((t) => t.id === id)
+  if (!tab || tab.kind === 'home') return
+
+  if (tab.dirty) {
+    const name = tab.fileName ?? '未命名简历'
+    const v = await ask('未保存的修改', `「${name}」有未保存的修改。`, [
+      { label: '取消', value: 'cancel' },
+      { label: '不保存', value: 'discard', kind: 'danger' },
+      { label: '保存', value: 'save', kind: 'primary' }
+    ])
+    if (v === 'cancel') return
+    cancelAutosave(tab.id)
+    if (v === 'save') {
+      if (!(await saveTabInteractive(tab))) return
+    } else if (!tab.filePath) {
+      // 丢弃的是还没保存过的内容 → 连同它的防丢草稿一起清掉
+      await window.myresume.file.autorecoverClear(tab.doc.id)
+    }
+  } else {
+    cancelAutosave(tab.id)
   }
-  const r = await window.myresume.file.openRecent(path)
-  await openFrom(r)
+  removeTab(tab.id)
 }
 
 // ———————————————— PDF 导出 ————————————————
@@ -143,9 +244,12 @@ export const exporting = reactive({ busy: false })
 
 export async function exportPdfAction(): Promise<void> {
   if (exporting.busy) return
+  const tab = activeTab.value
+  if (tab.kind !== 'doc') return
+  const doc = plainDoc(tab)
   exporting.busy = true
   try {
-    const r = await window.myresume.pdf.export(plainDoc())
+    const r = await window.myresume.pdf.export(doc)
     if (r.savedPath) {
       showToast(`已导出 PDF：${r.savedPath}`)
     } else if (r.error) {
@@ -158,6 +262,22 @@ export async function exportPdfAction(): Promise<void> {
 
 // ———————————————— 关于 / 草稿恢复 / 菜单 ————————————————
 
+/** 左下角「上次有没保存的简历」提示：10 秒不理会就自动消失（草稿留在磁盘上，下次再提示） */
+const DRAFT_NOTICE_MS = 10_000
+let draftNoticeTimer: ReturnType<typeof setTimeout> | undefined
+
+export const draftNotice = reactive({
+  visible: false,
+  count: 0,
+  when: '',
+  drafts: [] as DraftItem[]
+})
+
+export function dismissDraftNotice(): void {
+  clearTimeout(draftNoticeTimer)
+  draftNotice.visible = false
+}
+
 async function aboutAction(): Promise<void> {
   const version = await window.myresume.app.getVersion()
   await infoBox(
@@ -166,27 +286,41 @@ async function aboutAction(): Promise<void> {
   )
 }
 
-/** 应用启动时检查未保存草稿（新建窗口跳过——恢复只属于应用启动流程） */
+/** 应用启动时检查未保存草稿：左下角提示 10 秒，不理会就自动消失（草稿保留，下次再提示） */
 export async function initFileUI(): Promise<void> {
-  if (isNewWindow) return
   try {
-    const draft = await window.myresume.file.autorecoverRead()
-    if (!draft?.doc) return
-    const when = draft.updatedAt ? new Date(draft.updatedAt).toLocaleString('zh-CN') : '上次'
-    const v = await ask('发现未保存的草稿', `检测到 ${when}编辑过但未保存的简历内容。\n恢复它继续编辑，还是丢弃？`, [
-      { label: '丢弃', value: 'discard', kind: 'danger' },
-      { label: '恢复', value: 'restore', kind: 'primary' }
-    ])
-    if (v === 'restore') {
-      await replaceDoc(draft.doc, null, null)
-      startView.visible = false
-      showToast('已恢复草稿（记得及时保存为文件）')
-    } else {
-      await window.myresume.file.autorecoverClear()
-    }
+    const drafts = await window.myresume.file.autorecoverRead()
+    if (!drafts || drafts.length === 0) return
+    const newest = drafts[0]!
+    draftNotice.drafts = drafts
+    draftNotice.count = drafts.length
+    draftNotice.when = newest.updatedAt ? new Date(newest.updatedAt).toLocaleString('zh-CN') : ''
+    draftNotice.visible = true
+    clearTimeout(draftNoticeTimer)
+    draftNoticeTimer = setTimeout(() => {
+      draftNotice.visible = false
+    }, DRAFT_NOTICE_MS)
   } catch (err) {
     console.warn('草稿检查失败', err)
   }
+}
+
+/** 恢复全部草稿为标签 */
+export async function restoreDraftsAction(): Promise<void> {
+  const list = draftNotice.drafts
+  dismissDraftNotice()
+  const created: DocTab[] = []
+  for (const d of list) created.push(addDocTab(d.doc, null, null))
+  if (created[0]) await activateTab(created[0].id)
+  showToast(`已恢复 ${created.length} 份草稿（记得及时保存为文件）`)
+}
+
+/** 丢弃全部草稿：逐份按 id 清除，绝不整目录删除 */
+export async function discardDraftsAction(): Promise<void> {
+  const list = draftNotice.drafts
+  dismissDraftNotice()
+  for (const d of list) await window.myresume.file.autorecoverClear(d.id)
+  showToast('已丢弃未保存的草稿')
 }
 
 /** 原生菜单 / 工具栏统一动作入口 */
@@ -196,10 +330,12 @@ export function handleMenuAction(action: MenuAction): void {
   else if (action === 'import-doc') void importDocAction()
   else if (action === 'save-doc') void saveDoc()
   else if (action === 'save-as-doc') void saveDoc(true)
-  else if (action === 'save-and-close') {
+  else if (action === 'close-tab') void closeTabAction()
+  else if (action === 'save-all-and-close') {
     void (async () => {
-      const ok = await saveDoc()
-      if (ok || !store.dirty) await window.myresume.app.closeWindow()
+      const ok = await saveAllDirtyTabs()
+      if (ok) await window.myresume.app.closeWindow()
+      else showToast('已取消关闭：还有简历没有保存')
     })()
   } else if (action === 'about') void aboutAction()
   else if (action === 'check-updates') void window.myresume.update.check()
@@ -216,23 +352,18 @@ export const importUI = reactive({
   pending: null as null | { name: string; ext: string; dataBase64: string }
 })
 
-/** 打开导入流程（脏文档先确认）；传入 dropped 文件则跳过选择步骤 */
+/** 打开导入流程；传入 dropped 文件则跳过选择步骤（导入一律进新标签，不会动当前简历） */
 export async function importDocAction(dropped?: { name: string; ext: string; dataBase64: string }): Promise<void> {
-  const choice = await confirmGuard()
-  if (choice === 'cancel') return
-  if (choice === 'save') {
-    const ok = await saveDoc()
-    if (!ok) return
-  }
   importUI.pending = dropped ?? null
   importUI.open = true
 }
 
-/** 导入完成：换入新文档并进入编辑器（提示解析统计，引导检查） */
+/** 导入完成：文档进新标签并切过去（提示解析统计，引导检查） */
 export async function finishImport(doc: ResumeDocument): Promise<void> {
-  await replaceDoc(doc, null, null)
   importUI.open = false
-  startView.visible = false
+  const reusable = reusableBlankTab()
+  const tab = await placeDoc(doc, null, null, reusable?.id ?? uid())
+  await activateTab(tab.id)
   const contentSections = doc.sections.filter((s) => s.type !== 'basicInfo')
   let itemCount = 0
   for (const s of contentSections) {
@@ -244,10 +375,6 @@ export async function finishImport(doc: ResumeDocument): Promise<void> {
 
 // ———————————————— 首页（起始页）与 AI 设置 ————————————————
 
-/** 新窗口（?new=1）直接进入空白编辑器；普通启动显示首页 */
-const isNewWindow = typeof location !== 'undefined' && new URLSearchParams(location.search).has('new')
-
-export const startView = reactive({ visible: !isNewWindow })
 export const settingsUI = reactive({ open: false })
 
 // 开发环境自测钩子（打包版不存在）
@@ -256,41 +383,33 @@ if (import.meta.env.DEV && typeof window !== 'undefined') {
     openImport: () => {
       importUI.pending = null
       importUI.open = true
-    }
+    },
+    /** 自测用：直接从磁盘路径打开一份简历（跳过系统对话框，才能自动断言存盘结果） */
+    openPath: (path: string) =>
+      openFrom((tabId) => window.myresume.file.__testOpenPath(tabId, path))
   }
 }
 
-/** 从编辑器返回首页（当前文档保留在内存，可随时回来） */
+/** 切回首页标签 */
 export function homeAction(): void {
-  startView.visible = true
+  void activateTab(ensureHomeTab().id)
 }
 
-/** 从首页回到正在编辑的简历 */
-export function backToEditorAction(): void {
-  startView.visible = false
-}
-
-/** 从首页选择模板：当前文档为空→直接套模板进入；已有内容→走「新建」保护流程 */
+/** 从首页选模板：当前已有一份空白简历 → 直接套用；否则开新标签 */
 export async function startWithTemplate(id: TemplateId): Promise<void> {
   try {
     localStorage.setItem('myresume.lastTemplate', id)
   } catch {
     /* 忽略存储失败 */
   }
-  const isEmpty = store.doc.sections.every((s) => isSectionEmpty(s))
-  if (isEmpty) {
-    store.doc.meta.template = id
-    startView.visible = false
-    return
+  const reusable = reusableBlankTab()
+  let tab: DocTab
+  if (reusable) {
+    reusable.doc.meta.template = id
+    tab = reusable
+  } else {
+    tab = addDocTab(createDefaultDocument(id), null, null)
   }
-  const choice = await confirmGuard()
-  if (choice === 'cancel') return
-  if (choice === 'save') {
-    const ok = await saveDoc()
-    if (!ok) return
-  }
-  await window.myresume.file.newSession()
-  await replaceDoc(createDefaultDocument(id), null, null)
-  startView.visible = false
+  await activateTab(tab.id)
   showToast(`已用「${id === 'law-classic' ? '法学正式风' : '通用简约风'}」新建空白简历`)
 }

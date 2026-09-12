@@ -2,22 +2,27 @@
 import { onBeforeUnmount, onMounted, ref } from 'vue'
 import type { TemplateId } from '@shared/schema'
 import { store } from './stores/resume'
+import { isHomeTab } from './stores/tabs'
 import { TEMPLATES } from './preview/templates'
 import EditorPanel from './editor/EditorPanel.vue'
 import PreviewPane from './preview/PreviewPane.vue'
 import ConfirmModal from './fileUI/ConfirmModal.vue'
+import DraftNotice from './fileUI/DraftNotice.vue'
 import SaveStatus from './fileUI/SaveStatus.vue'
 import StartPage from './fileUI/StartPage.vue'
+import TabBar from './fileUI/TabBar.vue'
 import TypographyPanel from './fileUI/TypographyPanel.vue'
 import AiModelButton from './fileUI/AiModelButton.vue'
 import ImportDialog from './fileUI/ImportDialog.vue'
 import SettingsDialog from './fileUI/SettingsDialog.vue'
 import UpdateToast from './updaterUI/UpdateToast.vue'
+import AiAssistantDialog from './ai/AiAssistantDialog.vue'
+import AiDiagnoseDialog from './ai/AiDiagnoseDialog.vue'
+import { openDiagnose } from './ai/useAiAssistant'
 import {
   exportPdfAction,
   exporting,
   handleMenuAction,
-  homeAction,
   importDocAction,
   importUI,
   initFileUI,
@@ -26,7 +31,6 @@ import {
   openDocAction,
   saveDoc,
   settingsUI,
-  startView,
   toast
 } from './fileUI/useFileActions'
 
@@ -95,9 +99,7 @@ function onTemplateChange(e: Event): void {
 </script>
 
 <template>
-  <StartPage v-if="startView.visible" />
-
-  <div v-else class="app-shell">
+  <div class="app-shell">
     <header class="app-topbar">
       <div class="brand">
         <span class="brand-mark">简</span>
@@ -105,48 +107,63 @@ function onTemplateChange(e: Event): void {
       </div>
 
       <div class="file-btns">
-        <button class="tb-btn" @click="homeAction()">首页</button>
         <button class="tb-btn" @click="newDocAction()">新建</button>
         <button class="tb-btn" @click="openDocAction()">打开</button>
         <button class="tb-btn" @click="importDocAction()">导入</button>
-        <button class="tb-btn" :class="{ disabled: !store.dirty }" @click="saveDoc()">保存</button>
-        <button class="tb-btn" @click="saveDoc(true)">另存为</button>
+        <template v-if="!isHomeTab">
+          <button class="tb-btn" :class="{ disabled: !store.dirty }" @click="saveDoc()">保存</button>
+          <button class="tb-btn" @click="saveDoc(true)">另存为</button>
+        </template>
       </div>
 
       <div class="topbar-right">
         <AiModelButton />
 
-        <label class="tpl-label">模板</label>
-        <select class="tpl-select" :value="store.doc.meta.template" @change="onTemplateChange">
-          <option v-for="t in templateOptions" :key="t.id" :value="t.id" :disabled="!t.available">
-            {{ t.name }}{{ t.available ? '' : '（即将上线）' }}
-          </option>
-        </select>
+        <template v-if="!isHomeTab">
+          <label class="tpl-label">模板</label>
+          <select class="tpl-select" :value="store.doc.meta.template" @change="onTemplateChange">
+            <option v-for="t in templateOptions" :key="t.id" :value="t.id" :disabled="!t.available">
+              {{ t.name }}{{ t.available ? '' : '（即将上线）' }}
+            </option>
+          </select>
 
-        <TypographyPanel />
+          <TypographyPanel />
 
-        <button class="tb-btn export" :disabled="exporting.busy" @click="exportPdfAction()">
-          {{ exporting.busy ? '导出中…' : '导出 PDF' }}
-        </button>
+          <button class="tb-btn ai" title="让 AI 通读整份简历、列出具体问题" @click="openDiagnose()">
+            AI 诊断
+          </button>
 
-        <SaveStatus />
+          <button class="tb-btn export" :disabled="exporting.busy" @click="exportPdfAction()">
+            {{ exporting.busy ? '导出中…' : '导出 PDF' }}
+          </button>
+
+          <SaveStatus />
+        </template>
       </div>
     </header>
 
+    <TabBar />
+
     <div class="app-main">
-      <aside class="app-editor">
-        <EditorPanel />
-      </aside>
-      <main class="app-preview">
-        <PreviewPane />
-      </main>
+      <StartPage v-if="isHomeTab" />
+      <template v-else>
+        <aside class="app-editor">
+          <EditorPanel />
+        </aside>
+        <main class="app-preview">
+          <PreviewPane />
+        </main>
+      </template>
     </div>
   </div>
 
-  <!-- 弹窗与提示条全局可用（含起始页） -->
+  <!-- 弹窗与提示条全局可用 -->
   <ConfirmModal />
+  <DraftNotice />
   <ImportDialog v-if="importUI.open" />
   <SettingsDialog v-if="settingsUI.open" @close="settingsUI.open = false" />
+  <AiAssistantDialog />
+  <AiDiagnoseDialog />
   <UpdateToast />
 
   <!-- 全窗口拖放导入提示 -->
@@ -223,6 +240,18 @@ function onTemplateChange(e: Event): void {
 
 .tb-btn.disabled {
   opacity: 0.55;
+}
+
+.tb-btn.ai {
+  border-color: #c9cdf5;
+  background: #f4f5ff;
+  color: #5a63d8;
+}
+
+.tb-btn.ai:hover {
+  border-color: #667eea;
+  background: #667eea;
+  color: #fff;
 }
 
 .tb-btn.export {

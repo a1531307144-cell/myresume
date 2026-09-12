@@ -1,15 +1,20 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 import type { RecentItem } from '@shared/ipc'
-import { isSectionEmpty } from '@shared/sectionDefs'
-import { store } from '@renderer/stores/resume'
-import { backToEditorAction, importDocAction, openDocAction, openRecentAction, startWithTemplate } from './useFileActions'
+import { activateTab, tabs } from '@renderer/stores/tabs'
+import { importDocAction, openDocAction, openRecentAction, startWithTemplate } from './useFileActions'
 
 const recent = ref<RecentItem[]>([])
 const version = ref('')
 
-/** 当前内存里有实质内容时，首页提供「返回当前简历」 */
-const hasOpenDoc = computed(() => !store.doc.sections.every((s) => isSectionEmpty(s)))
+/** 已经打开的简历（点击回到其中最近的一份） */
+const docTabs = computed(() => tabs.filter((t) => t.kind === 'doc'))
+const lastDocTab = computed(() => docTabs.value[docTabs.value.length - 1])
+
+function backToLastDoc(): void {
+  const tab = lastDocTab.value
+  if (tab) void activateTab(tab.id)
+}
 
 onMounted(async () => {
   try {
@@ -38,7 +43,9 @@ function fmtDate(iso: string): string {
       </div>
       <p class="start-sub">选择一个模板开始——之后可以随时切换，数据不会变</p>
 
-      <button v-if="hasOpenDoc" class="back-btn" @click="backToEditorAction()">← 返回正在编辑的简历</button>
+      <button v-if="lastDocTab" class="back-btn" @click="backToLastDoc()">
+        ← 返回正在编辑的简历（{{ lastDocTab.fileName ?? '未命名简历' }}）
+      </button>
 
       <div class="start-cards">
         <button class="start-card" @click="startWithTemplate('law-classic')">
@@ -87,7 +94,8 @@ function fmtDate(iso: string): string {
 
 <style scoped>
 .start-page {
-  height: 100vh;
+  height: 100%;
+  width: 100%;
   display: flex;
   flex-direction: column;
   align-items: center;

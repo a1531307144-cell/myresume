@@ -87,6 +87,17 @@ export async function exportPdf(doc: ResumeDocument): Promise<PdfResult> {
   }
 }
 
+/**
+ * 退出前销毁隐藏打印窗口。
+ * 该窗口常驻复用（避免每次导出都重建），但它会让 window-all-closed 不触发，
+ * 若不主动销毁，导出过 PDF 后关闭主窗口会残留一个看不见的进程。
+ */
+export function destroyPrintWindow(): void {
+  if (printWin && !printWin.isDestroyed()) printWin.destroy()
+  printWin = null
+  readyResolve = null
+}
+
 export function registerPdfIpc(): void {
   ipcMain.handle('pdf:export', (_e, doc: ResumeDocument) => exportPdf(doc))
   // 打印窗口渲染就绪回执

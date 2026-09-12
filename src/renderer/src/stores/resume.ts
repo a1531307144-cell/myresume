@@ -1,90 +1,34 @@
-import { computed, nextTick, reactive, watch } from 'vue'
+import { computed } from 'vue'
 import type { ResumeDocument, Section } from '@shared/schema'
-import { createDefaultDocument } from '@shared/defaults'
 import { createSection } from '@shared/sectionDefs'
 import type { SectionPreset } from '@shared/sectionPresets'
 import { isSectionEmpty } from '@shared/sectionDefs'
-
-export type SaveStatus = 'saved' | 'saving' | 'dirty' | 'draft' | 'error'
+import { activeTab, replaceTabDoc, store } from './tabs'
 
 /**
- * 模块级单例 store：全应用只有一个「当前文档」状态。
- * 所有修改都是响应式数据变更，编辑器与预览自动同步。
+ * 简历 store：数据与保存状态由 stores/tabs.ts 按「当前标签」提供，
+ * 本模块只保留与「单个文档内部结构」相关的操作。
+ *
+ * 对外形状与改造前一致（`store` / `useResumeStore` / `replaceDoc`），
+ * 因此各编辑器、预览、模板组件均无需改动。
  */
-/** 记住上次使用的模板（起始页选择时写入） */
-function initialTemplate(): ResumeDocument['meta']['template'] {
-  try {
-    const saved = localStorage.getItem('myresume.lastTemplate')
-    if (saved === 'law-classic' || saved === 'simple-modern') return saved
-  } catch {
-    /* 忽略读取失败 */
-  }
-  return 'law-classic'
-}
 
-export const store = reactive({
-  doc: createDefaultDocument(initialTemplate()) as ResumeDocument,
-  filePath: null as string | null,
-  fileName: null as string | null,
-  dirty: false,
-  saveStatus: 'draft' as SaveStatus,
-  pickerOpen: false
-})
+export { store, activeTab } from './tabs'
+export type { SaveStatus, DocTab } from './tabs'
 
-// ———————————————— 编辑监听：置脏 + 防抖自动保存 ————————————————
-
-let suppressWatch = false
-let autosaveTimer: ReturnType<typeof setTimeout> | undefined
-
-watch(
-  () => store.doc,
-  () => {
-    if (suppressWatch) return
-    store.dirty = true
-    store.saveStatus = store.filePath ? 'dirty' : 'draft'
-    store.doc.updatedAt = new Date().toISOString()
-    void window.myresume.file.setDirty(true)
-    clearTimeout(autosaveTimer)
-    autosaveTimer = setTimeout(() => void autosaveNow(), 1000)
-  },
-  { deep: true }
-)
-
-async function autosaveNow(): Promise<void> {
-  if (!store.dirty) return
-  const plain = JSON.parse(JSON.stringify(store.doc)) as ResumeDocument
-  if (store.filePath) {
-    // 已有文件：静默写回当前文件（Word 心智）
-    store.saveStatus = 'saving'
-    const r = await window.myresume.file.save(plain)
-    if (r && !r.canceled && !r.error) {
-      store.dirty = false
-      store.saveStatus = 'saved'
-      void window.myresume.file.setDirty(false)
-    } else if (r?.error) {
-      store.saveStatus = 'error'
-    }
-  } else {
-    // 从未保存过：写应用内防丢草稿（不写用户可见位置）
-    await window.myresume.file.autorecoverSave(plain)
-  }
-}
-
-/** 整体替换文档（打开/恢复草稿），不触发置脏 */
-export async function replaceDoc(doc: ResumeDocument, path: string | null, name: string | null): Promise<void> {
-  suppressWatch = true
-  store.doc = doc
-  store.filePath = path
-  store.fileName = name
-  store.dirty = false
-  store.saveStatus = path ? 'saved' : 'draft'
-  void window.myresume.file.setDirty(false)
-  await nextTick()
-  suppressWatch = false
+/** 整体替换**当前标签**的文档（打开/导入/恢复草稿），不触发置脏 */
+export async function replaceDoc(
+  doc: ResumeDocument,
+  path: string | null,
+  name: string | null
+): Promise<void> {
+  await replaceTabDoc(activeTab.value, doc, path, name)
 }
 
 export function useResumeStore() {
-  const basicInfo = computed<Section | undefined>(() => store.doc.sections.find((s) => s.type === 'basicInfo'))
+  const basicInfo = computed<Section | undefined>(() =>
+    store.doc.sections.find((s) => s.type === 'basicInfo')
+  )
   const visibleSections = computed<Section[]>(() =>
     store.doc.sections.filter((s) => s.type !== 'basicInfo' && !isSectionEmpty(s))
   )

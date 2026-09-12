@@ -2,6 +2,7 @@
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import type { AiProfileView } from '@shared/ipc'
 import { buildDocument, parseResumeText } from '@shared/importer'
+import { uid } from '@shared/id'
 import { extractText } from '@renderer/importerClient/extract'
 import { store } from '@renderer/stores/resume'
 import { importUI, finishImport, modalApi, settingsUI } from './useFileActions'
@@ -33,6 +34,10 @@ const checkmarks = computed(() => [
   { label: '自我评价', hit: /"type"\s*:\s*"textBlock"/.test(aiText.value) }
 ])
 
+/** 本次导入的 AI 任务标识：进度事件按它过滤，避免被同时进行的润色任务串台 */
+const aiTaskId = ref('')
+let unsubscribeProgress: (() => void) | null = null
+
 // 设置窗口关闭后刷新模型状态
 watch(
   () => settingsUI.open,
@@ -42,10 +47,17 @@ watch(
 )
 
 onMounted(() => {
-  window.myresume.ai.onProgress((p) => {
+  unsubscribeProgress = window.myresume.ai.onProgress((p) => {
+    if (!aiTaskId.value || p.taskId !== aiTaskId.value) return
     aiChars.value = p.chars
     aiText.value = p.text
   })
+})
+
+onBeforeUnmount(() => {
+  unsubscribeProgress?.()
+  unsubscribeProgress = null
+  stopTimer()
 })
 
 // 拖放的文件（或重新拖入）直接进入处理流程
@@ -74,8 +86,6 @@ function stopTimer(): void {
     elapsedTimer = undefined
   }
 }
-
-onBeforeUnmount(stopTimer)
 
 async function pick(): Promise<void> {
   error.value = ''
@@ -155,9 +165,15 @@ async function parseAi(): Promise<void> {
   parseMode.value = 'ai'
   aiChars.value = 0
   aiText.value = ''
+  aiTaskId.value = uid()
   startTimer()
   try {
-    const r = await window.myresume.ai.parse(text.value, selectedProfileId.value || undefined)
+    const r = await window.myresume.ai.run({
+      taskId: aiTaskId.value,
+      task: 'parse-resume',
+      payload: { text: text.value },
+      profileId: selectedProfileId.value || undefined
+    })
     if (r.ok && r.parsed) {
       void finishImport(buildDocument(r.parsed, store.doc.meta.template))
       return
@@ -174,12 +190,13 @@ async function parseAi(): Promise<void> {
   } finally {
     stopTimer()
     parseMode.value = ''
+    aiTaskId.value = ''
   }
 }
 
 function cancelParse(): void {
-  if (parseMode.value === 'ai') {
-    void window.myresume.ai.cancel()
+  if (parseMode.value === 'ai' && aiTaskId.value) {
+    void window.myresume.ai.cancel(aiTaskId.value)
   }
 }
 
@@ -201,7 +218,9 @@ if (import.meta.env.DEV) {
     aiReady: aiReady.value,
     profileCount: profiles.value.length,
     selected: selectedProfileId.value,
-    error: error.value
+    error: error.value,
+    taskId: aiTaskId.value,
+    aiChars: aiChars.value
   })
 }
 </script>

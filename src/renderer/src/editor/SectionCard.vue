@@ -2,6 +2,7 @@
 import { computed, ref } from 'vue'
 import type { Section, SectionType } from '@shared/schema'
 import { useResumeStore } from '@renderer/stores/resume'
+import { openSectionAi } from '@renderer/ai/useAiAssistant'
 import BasicInfoEditor from './sectionEditors/BasicInfoEditor.vue'
 import EducationEditor from './sectionEditors/EducationEditor.vue'
 import ExperienceEditor from './sectionEditors/ExperienceEditor.vue'
@@ -21,6 +22,8 @@ const EDITORS: Record<SectionType, unknown> = {
 const { removeSection, moveSection, renameSection } = useResumeStore()
 
 const canDelete = computed(() => props.section.type !== 'basicInfo')
+/** 基本信息里全是姓名／电话这类事实，不适合让 AI 改写，故不提供 AI 按钮 */
+const canUseAi = computed(() => props.section.type !== 'basicInfo')
 
 // 标题行内编辑
 const editingTitle = ref(false)
@@ -54,7 +57,7 @@ const vFocus = {
 </script>
 
 <template>
-  <div class="section-card">
+  <div class="section-card" :data-section-id="section.id">
     <div class="card-head">
       <span class="drag-handle" title="拖动排序">⋮⋮</span>
 
@@ -71,6 +74,9 @@ const vFocus = {
       </button>
 
       <div class="card-actions">
+        <button v-if="canUseAi" class="act ai" title="用 AI 润色或生成这个板块" @click="openSectionAi(section.id)">
+          ✨AI
+        </button>
         <button class="act" title="上移" @click="moveSection(section.id, -1)">↑</button>
         <button class="act" title="下移" @click="moveSection(section.id, 1)">↓</button>
         <template v-if="canDelete">
@@ -164,6 +170,19 @@ const vFocus = {
 .act.confirm {
   background: #d9534f;
   border-color: #d9534f;
+  color: #fff;
+}
+
+.act.ai {
+  border-color: #c9cdf5;
+  background: #f4f5ff;
+  color: #5a63d8;
+  font-weight: 500;
+}
+
+.act.ai:hover {
+  border-color: #667eea;
+  background: #667eea;
   color: #fff;
 }
 </style>

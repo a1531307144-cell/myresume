@@ -7,10 +7,10 @@ import type { ResumeDocument } from '../shared/schema'
 import type { OpenResult, RecentItem, SaveResult } from '../shared/ipc'
 
 /**
- * 文件服务（多窗口）：每个窗口一份独立会话（当前文件路径 + 脏标记），
+ * 文件服务（单窗口多标签）：每个**标签**一份独立会话（当前文件路径 + 脏标记），
  * 路径只存在主进程（最小权限路径模型）。
  * 原子写（.tmp → rename）杜绝半写损坏；覆盖前自动备份（每文档保留 5 份）；
- * 防丢草稿按文档 id 一份（autorecover/<docId>.json），多窗口互不覆盖。
+ * 防丢草稿按文档 id 一份（autorecover/<docId>.json），多标签互不覆盖。
  */
 
 interface WindowSession {
@@ -18,7 +18,8 @@ interface WindowSession {
   dirty: boolean
 }
 
-const sessions = new Map<number, WindowSession>()
+/** 会话键：`${webContents.id}:${tabId}` —— 同一窗口内每个标签彼此隔离 */
+const sessions = new Map<string, WindowSession>()
 
 let recentCache: RecentItem[] = []
 let recentChangedCb: (() => void) | null = null
@@ -41,29 +42,64 @@ function recentFile(): string {
   return join(userDataDir(), 'recent.json')
 }
 
-function sessionFor(sender: Electron.WebContents): WindowSession {
-  let s = sessions.get(sender.id)
+function sessionKey(webContentsId: number, tabId: string): string {
+  return `${webContentsId}:${tabId}`
+}
+
+function sessionFor(sender: Electron.WebContents, tabId: string): WindowSession {
+  const key = sessionKey(sender.id, tabId)
+  let s = sessions.get(key)
   if (!s) {
     s = { filePath: null, dirty: false }
-    sessions.set(sender.id, s)
+    sessions.set(key, s)
   }
   return s
 }
 
+/** 窗口销毁：清掉它名下所有标签的会话 */
 export function destroySession(webContentsId: number): void {
-  sessions.delete(webContentsId)
+  const prefix = `${webContentsId}:`
+  for (const key of [...sessions.keys()]) {
+    if (key.startsWith(prefix)) sessions.delete(key)
+  }
+  activeTabs.delete(webContentsId)
 }
 
+/** 关闭标签：丢弃其会话（避免 Map 无限增长） */
+export function dropTabSession(webContentsId: number, tabId: string): void {
+  sessions.delete(sessionKey(webContentsId, tabId))
+}
+
+/** 本窗口**任一**标签有未保存修改（关闭窗口时的拦截依据） */
 export function isWindowDirty(win: BrowserWindow): boolean {
-  return sessions.get(win.webContents.id)?.dirty ?? false
+  const prefix = `${win.webContents.id}:`
+  for (const [key, s] of sessions) {
+    if (key.startsWith(prefix) && s.dirty) return true
+  }
+  return false
 }
 
 function focusedWin(): BrowserWindow | undefined {
   return BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0]
 }
 
-function setTitle(sender: Electron.WebContents, name: string): void {
-  BrowserWindow.fromWebContents(sender)?.setTitle(`${name} — 我的简历`)
+/** 每个窗口当前激活的标签 id（空串 = 首页）；窗口标题只跟随它 */
+const activeTabs = new Map<number, string>()
+
+/**
+ * 刷新窗口标题。只有「刚被写入/打开的这个标签就是当前激活标签」时才改标题——
+ * 后台标签的自动保存绝不能把标题改成它自己的名字。
+ */
+function refreshTitle(sender: Electron.WebContents): void {
+  const win = BrowserWindow.fromWebContents(sender)
+  if (!win) return
+  const tabId = activeTabs.get(sender.id) ?? ''
+  if (!tabId) {
+    win.setTitle('我的简历')
+    return
+  }
+  const s = sessionFor(sender, tabId)
+  win.setTitle(`${s.filePath ? basename(s.filePath) : '未命名简历'} — 我的简历`)
 }
 
 // ———————————————— 原子写 / 备份 ————————————————
@@ -120,7 +156,12 @@ async function pushRecent(path: string, updatedAt: string): Promise<void> {
 
 // ———————————————— 打开 / 保存 ————————————————
 
-async function openPath(path: string, sender: Electron.WebContents): Promise<OpenResult> {
+async function openPath(
+  path: string,
+  sender: Electron.WebContents,
+  tabId: string,
+  pushToRecent = true
+): Promise<OpenResult> {
   try {
     const text = await readFile(path, 'utf-8')
     let json: unknown
@@ -131,26 +172,33 @@ async function openPath(path: string, sender: Electron.WebContents): Promise<Ope
     }
     const r = loadMigrate(json)
     if (!r.ok) return { error: r.error }
-    sessionFor(sender).filePath = path
-    sessionFor(sender).dirty = false
-    await pushRecent(path, r.doc.updatedAt)
-    setTitle(sender, basename(path))
+    const session = sessionFor(sender, tabId)
+    session.filePath = path
+    session.dirty = false
+    if (pushToRecent) await pushRecent(path, r.doc.updatedAt)
+    refreshTitle(sender)
     return { path, name: basename(path), doc: r.doc }
   } catch {
     return { error: '无法读取文件（可能已被移动或删除）' }
   }
 }
 
-async function writeTo(path: string, doc: ResumeDocument, sender: Electron.WebContents): Promise<SaveResult> {
+async function writeTo(
+  path: string,
+  doc: ResumeDocument,
+  sender: Electron.WebContents,
+  tabId: string
+): Promise<SaveResult> {
   try {
     await backupExisting(path, doc.id)
     await atomicWrite(path, JSON.stringify(doc, null, 2))
-    sessionFor(sender).filePath = path
-    sessionFor(sender).dirty = false
+    const session = sessionFor(sender, tabId)
+    session.filePath = path
+    session.dirty = false
     await pushRecent(path, doc.updatedAt)
     await rm(join(autorecoverDir(), `${doc.id}.json`), { force: true }) // 已落盘，草稿可清
     await rm(join(userDataDir(), 'autorecover.json'), { force: true }) // 旧版单草稿文件清理
-    setTitle(sender, basename(path))
+    refreshTitle(sender)
     return { path, name: basename(path) }
   } catch (err) {
     console.error('保存失败', err)
@@ -175,15 +223,24 @@ export async function initFileService(): Promise<void> {
   }
 }
 
+/** 校验渲染层传来的标签 id（会话键以「:」分隔，故禁止出现该字符） */
+function asTabId(v: unknown): string {
+  return typeof v === 'string' && v.length > 0 && v.length <= 64 && !v.includes(':') ? v : ''
+}
+
 export function registerFileIpc(): void {
-  ipcMain.handle('file:new', (_e) => {
-    const s = sessionFor(_e.sender)
+  ipcMain.handle('file:new', (e, tabId: unknown) => {
+    const t = asTabId(tabId)
+    if (!t) return
+    const s = sessionFor(e.sender, t)
     s.filePath = null
     s.dirty = false
-    setTitle(_e.sender, '未命名简历')
+    // 注意：这里**不**改窗口标题——该标签可能不在前台，标题只跟随当前标签
   })
 
-  ipcMain.handle('file:open', async (e) => {
+  ipcMain.handle('file:open', async (e, tabId: unknown) => {
+    const t = asTabId(tabId)
+    if (!t) return { error: '内部错误：标签无效' }
     const win = BrowserWindow.fromWebContents(e.sender) ?? focusedWin()
     if (!win) return { canceled: true }
     const r = await dialog.showOpenDialog(win, {
@@ -192,25 +249,31 @@ export function registerFileIpc(): void {
       properties: ['openFile']
     })
     if (r.canceled || !r.filePaths[0]) return { canceled: true }
-    return openPath(r.filePaths[0], e.sender)
+    return openPath(r.filePaths[0], e.sender, t)
   })
 
-  ipcMain.handle('file:openRecent', (e, path: unknown) => {
+  ipcMain.handle('file:openRecent', (e, path: unknown, tabId: unknown) => {
+    const t = asTabId(tabId)
+    if (!t) return { error: '内部错误：标签无效' }
     if (typeof path !== 'string') return { error: '路径无效' }
-    return openPath(path, e.sender)
+    return openPath(path, e.sender, t)
   })
 
   ipcMain.handle('file:getRecent', () => recentCache)
 
-  ipcMain.handle('file:save', (e, doc: ResumeDocument) => {
-    const session = sessionFor(e.sender)
+  ipcMain.handle('file:save', (e, doc: ResumeDocument, tabId: unknown) => {
+    const t = asTabId(tabId)
+    if (!t) return Promise.resolve({ error: '内部错误：标签无效' })
+    const session = sessionFor(e.sender, t)
     if (!session.filePath) {
       return Promise.resolve({ error: '尚未指定保存位置，请先「另存为」' })
     }
-    return writeTo(session.filePath, doc, e.sender)
+    return writeTo(session.filePath, doc, e.sender, t)
   })
 
-  ipcMain.handle('file:saveAs', async (e, doc: ResumeDocument) => {
+  ipcMain.handle('file:saveAs', async (e, doc: ResumeDocument, tabId: unknown) => {
+    const t = asTabId(tabId)
+    if (!t) return { error: '内部错误：标签无效' }
     const win = BrowserWindow.fromWebContents(e.sender) ?? focusedWin()
     if (!win) return { canceled: true }
     const r = await dialog.showSaveDialog(win, {
@@ -221,11 +284,25 @@ export function registerFileIpc(): void {
     if (r.canceled || !r.filePath) return { canceled: true }
     let path = r.filePath
     if (!/\.(myresume|json)$/i.test(path)) path += '.myresume'
-    return writeTo(path, doc, e.sender)
+    return writeTo(path, doc, e.sender, t)
   })
 
-  ipcMain.handle('file:set-dirty', (e, v: unknown) => {
-    sessionFor(e.sender).dirty = Boolean(v)
+  ipcMain.handle('file:set-dirty', (e, v: unknown, tabId: unknown) => {
+    const t = asTabId(tabId)
+    if (!t) return
+    sessionFor(e.sender, t).dirty = Boolean(v)
+  })
+
+  /** 切换标签后刷新窗口标题（首页标签传空串 → 显示应用名） */
+  ipcMain.handle('file:set-active-tab', (e, tabId: unknown) => {
+    activeTabs.set(e.sender.id, typeof tabId === 'string' ? tabId : '')
+    refreshTitle(e.sender)
+  })
+
+  /** 关闭标签：丢弃该标签的会话 */
+  ipcMain.handle('file:close-tab', (e, tabId: unknown) => {
+    const t = asTabId(tabId)
+    if (t) dropTabSession(e.sender.id, t)
   })
 
   // ———— 防丢草稿（按文档 id 一份；仅未保存过的新文档使用） ————
@@ -242,32 +319,43 @@ export function registerFileIpc(): void {
     try {
       const dir = autorecoverDir()
       const files = (await readdir(dir)).filter((f) => f.endsWith('.json'))
-      let newest: { id: string; doc: ResumeDocument; updatedAt: string } | null = null
+      const drafts: { id: string; doc: ResumeDocument; updatedAt: string }[] = []
       for (const f of files) {
         try {
           const parsed = JSON.parse(await readFile(join(dir, f), 'utf-8'))
           if (parsed?.app !== 'MyResume') continue
-          const updatedAt = typeof parsed.updatedAt === 'string' ? parsed.updatedAt : ''
-          if (!newest || updatedAt > newest.updatedAt) {
-            newest = { id: String(parsed.id ?? f.replace(/\.json$/, '')), doc: parsed, updatedAt }
-          }
+          drafts.push({
+            id: String(parsed.id ?? f.replace(/\.json$/, '')),
+            doc: parsed,
+            updatedAt: typeof parsed.updatedAt === 'string' ? parsed.updatedAt : ''
+          })
         } catch {
           continue // 单个草稿损坏不影响其它
         }
       }
-      return newest
+      // 最新修改的排前面
+      drafts.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
+      return drafts
     } catch {
-      return null
+      return []
     }
   })
 
+  // 只按 id 清除单份草稿：绝不整目录删除（多标签下可能有数份未保存简历）
   ipcMain.handle('file:autorecover:clear', async (_e, id: unknown) => {
     const safeId = typeof id === 'string' && /^[A-Za-z0-9-]{4,64}$/.test(id) ? id : null
-    if (safeId) {
-      await rm(join(autorecoverDir(), `${safeId}.json`), { force: true })
-    } else {
-      // 无 id（旧版调用）：清空整个草稿目录
-      await rm(autorecoverDir(), { force: true, recursive: true })
-    }
+    if (!safeId) return
+    await rm(join(autorecoverDir(), `${safeId}.json`), { force: true })
   })
+
+  // 自测专用：按路径打开、但不写入「最近文件」（避免测试污染用户的最近列表）。
+  // 只在开发模式注册，打包版不存在这个通道。
+  if (!app.isPackaged) {
+    ipcMain.handle('file:__testOpenPath', (e, tabId: unknown, path: unknown) => {
+      const t = asTabId(tabId)
+      if (!t) return { error: '内部错误：标签无效' }
+      if (typeof path !== 'string') return { error: '路径无效' }
+      return openPath(path, e.sender, t, false)
+    })
+  }
 }

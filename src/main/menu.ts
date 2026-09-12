@@ -31,6 +31,7 @@ export async function buildAppMenu(): Promise<void> {
         { label: '保存', accelerator: 'CmdOrCtrl+S', click: () => sendAction('save-doc') },
         { label: '另存为…', accelerator: 'CmdOrCtrl+Shift+S', click: () => sendAction('save-as-doc') },
         { type: 'separator' },
+        { label: '关闭当前标签页', accelerator: 'CmdOrCtrl+W', click: () => sendAction('close-tab') },
         { role: 'quit', label: '退出' }
       ]
     },

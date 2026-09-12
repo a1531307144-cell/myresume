@@ -1,9 +1,11 @@
 import { contextBridge, ipcRenderer, webUtils } from 'electron'
 import type {
   AiConfigView,
-  AiParseResult,
   AiProfilePatch,
   AiProgress,
+  AiRunRequest,
+  AiRunResult,
+  DraftItem,
   MenuAction,
   OpenResult,
   PdfResult,
@@ -22,7 +24,9 @@ import type { ResumeDocument } from '../shared/schema'
 const api = {
   app: {
     getVersion: (): Promise<string> => ipcRenderer.invoke('app:getVersion'),
-    closeWindow: (): Promise<void> => ipcRenderer.invoke('app:close-window')
+    closeWindow: (): Promise<void> => ipcRenderer.invoke('app:close-window'),
+    /** 仅开发模式存在：窗口是否有未保存内容（自测用） */
+    __testWindowDirty: (): Promise<boolean> => ipcRenderer.invoke('app:__testWindowDirty')
   },
   dialog: {
     /** 返回原图 dataUrl（渲染进程负责压缩），取消返回 null */
@@ -43,30 +47,48 @@ const api = {
     /** 测试连接（可传未保存的表单；apiKey 留空用已存 Key） */
     test: (probe: { id?: string; baseUrl?: string; model?: string; apiKey?: string }): Promise<{ ok: boolean; error?: string }> =>
       ipcRenderer.invoke('ai:test', probe),
-    /** 纯文本 → 主进程代理 AI 解析 → 校验后的结构化结果；profileId 缺省用常用档案 */
-    parse: (text: string, profileId?: string): Promise<AiParseResult> => ipcRenderer.invoke('ai:parse', { text, profileId }),
-    cancel: (): Promise<void> => ipcRenderer.invoke('ai:cancel'),
-    /** 流式生成进度（已接收字符数） */
-    onProgress: (cb: (progress: AiProgress) => void): void => {
-      ipcRenderer.on('ai:progress', (_e, progress: AiProgress) => cb(progress))
+    /** 通用 AI 任务通道：主进程按 task 组装提示词、流式调用并返回模型原文 */
+    run: (req: AiRunRequest): Promise<AiRunResult> => ipcRenderer.invoke('ai:run', req),
+    /** 取消指定任务（只影响这一个，不影响同时进行的其它 AI 任务） */
+    cancel: (taskId: string): Promise<void> => ipcRenderer.invoke('ai:cancel', taskId),
+    /**
+     * 流式生成进度。返回**取消订阅函数**（务必在组件卸载时调用，
+     * 否则每次订阅都会泄漏一个监听器——v0.2.0 的老问题）。
+     */
+    onProgress: (cb: (progress: AiProgress) => void): (() => void) => {
+      const handler = (_e: unknown, progress: AiProgress): void => cb(progress)
+      ipcRenderer.on('ai:progress', handler)
+      return () => {
+        ipcRenderer.removeListener('ai:progress', handler)
+      }
     }
   },
   file: {
-    /** 多窗口：新建简历 = 开新窗口（当前窗口不受影响） */
-    newWindow: (): Promise<void> => ipcRenderer.invoke('file:new-window'),
     /** 拖放文件的系统路径（Electron 官方 webUtils 方式，路径仅用于交回主进程读取） */
     getPathForFile: (file: File): string => webUtils.getPathForFile(file),
-    newSession: (): Promise<void> => ipcRenderer.invoke('file:new'),
-    open: (): Promise<OpenResult> => ipcRenderer.invoke('file:open'),
-    openRecent: (path: string): Promise<OpenResult> => ipcRenderer.invoke('file:openRecent', path),
+    /** 为某个标签重置会话（新建空白简历） */
+    newSession: (tabId: string): Promise<void> => ipcRenderer.invoke('file:new', tabId),
+    open: (tabId: string): Promise<OpenResult> => ipcRenderer.invoke('file:open', tabId),
+    openRecent: (tabId: string, path: string): Promise<OpenResult> =>
+      ipcRenderer.invoke('file:openRecent', path, tabId),
     getRecent: (): Promise<RecentItem[]> => ipcRenderer.invoke('file:getRecent'),
-    save: (doc: ResumeDocument): Promise<SaveResult> => ipcRenderer.invoke('file:save', doc),
-    saveAs: (doc: ResumeDocument): Promise<SaveResult> => ipcRenderer.invoke('file:saveAs', doc),
-    setDirty: (v: boolean): Promise<void> => ipcRenderer.invoke('file:set-dirty', v),
-    autorecoverSave: (doc: ResumeDocument): Promise<void> => ipcRenderer.invoke('file:autorecover:save', doc),
-    autorecoverRead: (): Promise<{ doc: ResumeDocument; updatedAt: string } | null> =>
-      ipcRenderer.invoke('file:autorecover:read'),
-    autorecoverClear: (): Promise<void> => ipcRenderer.invoke('file:autorecover:clear')
+    save: (doc: ResumeDocument, tabId: string): Promise<SaveResult> =>
+      ipcRenderer.invoke('file:save', doc, tabId),
+    saveAs: (doc: ResumeDocument, tabId: string): Promise<SaveResult> =>
+      ipcRenderer.invoke('file:saveAs', doc, tabId),
+    setDirty: (v: boolean, tabId: string): Promise<void> => ipcRenderer.invoke('file:set-dirty', v, tabId),
+    /** 切换标签后刷新窗口标题（首页标签传空串） */
+    setActiveTab: (tabId: string): Promise<void> => ipcRenderer.invoke('file:set-active-tab', tabId),
+    /** 关闭标签：主进程丢弃该标签的会话 */
+    closeTab: (tabId: string): Promise<void> => ipcRenderer.invoke('file:close-tab', tabId),
+    /** 仅开发模式存在：按路径打开且不写入「最近文件」（自测用，避免污染用户数据） */
+    __testOpenPath: (tabId: string, path: string): Promise<OpenResult> =>
+      ipcRenderer.invoke('file:__testOpenPath', tabId, path),
+    autorecoverSave: (doc: ResumeDocument): Promise<void> =>
+      ipcRenderer.invoke('file:autorecover:save', doc),
+    /** 全部未保存草稿（按修改时间倒序），启动时逐份恢复 */
+    autorecoverRead: (): Promise<DraftItem[]> => ipcRenderer.invoke('file:autorecover:read'),
+    autorecoverClear: (id: string): Promise<void> => ipcRenderer.invoke('file:autorecover:clear', id)
   },
   pdf: {
     export: (doc: ResumeDocument): Promise<PdfResult> => ipcRenderer.invoke('pdf:export', doc)
