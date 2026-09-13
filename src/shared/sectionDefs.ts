@@ -18,10 +18,11 @@ export const SECTION_TYPE_DEFS: Record<SectionType, SectionTypeDef> = {
   basicInfo: {
     type: 'basicInfo',
     defaultTitle: '基本信息',
+    /** 求职意向放在第一位：所有模板都会把它提到醒目位置，且用户一眼看得到该填哪儿 */
     createData: (): BasicInfoData => ({
       name: '',
       photo: null,
-      contacts: [contact('电话'), contact('邮箱'), contact('所在地')]
+      contacts: [contact('求职意向'), contact('电话'), contact('邮箱'), contact('所在地')]
     }),
     isEmpty: (d) => {
       const b = d as BasicInfoData

@@ -29,11 +29,30 @@ function fixture(id, name) {
   }
 }
 
+/**
+ * 找到应用主窗口页面。应用可能正因热更新重载，CDP 端口会短暂不可用——
+ * 直接抓会失败并报成「找不到窗口」的假故障，所以这里重试几次。
+ */
+async function findPage(retries = 10) {
+  let last = []
+  for (let i = 0; i < retries; i++) {
+    try {
+      const list = await (await fetch(`http://127.0.0.1:${CDP_PORT}/json`)).json()
+      last = list
+      const page = list.find((t) => t.type === 'page' && /^http:\/\/localhost:5173\/?$/.test(t.url))
+      if (page) return { page, list }
+    } catch {
+      /* 应用正在重载，稍后重试 */
+    }
+    if (i < retries - 1) await new Promise((r) => setTimeout(r, 1000))
+  }
+  return { page: null, list: last }
+}
+
 async function main() {
-  const list = await (await fetch(`http://127.0.0.1:${CDP_PORT}/json`)).json()
-  const page = list.find((t) => t.type === 'page' && /^http:\/\/localhost:5173\/?$/.test(t.url))
+  const { page, list } = await findPage()
   if (!page) {
-    console.log('FAIL: 找不到应用主窗口页面。窗口列表:', list.map((t) => ({ type: t.type, url: t.url })))
+    console.log('FAIL: 找不到应用主窗口页面（请确认已 npm run dev）。窗口列表:', list.map((t) => ({ type: t.type, url: t.url })))
     process.exit(1)
   }
 

@@ -9,6 +9,7 @@ import type {
   SectionType,
   TextBlockData
 } from './schema'
+import { readJobTarget as readJobTargetOf } from './basicInfo'
 import { uid } from './id'
 
 /**
@@ -32,17 +33,14 @@ const MAX_TOTAL_CHARS = 40_000
 // ———————————————— 通用上下文 ————————————————
 
 /** 求职意向就存在「基本信息」板块的联系方式里（label 含「求职意向」等词），不新增字段 */
-const JOB_LABELS = ['求职意向', '求职方向', '意向岗位', '目标岗位', '应聘岗位', '求职目标']
-
 function basicInfoData(doc: ResumeDocument | undefined): BasicInfoData | undefined {
   const basic = doc?.sections.find((s) => s.type === 'basicInfo')
   return basic?.data as BasicInfoData | undefined
 }
 
+/** 匹配规则统一在 shared/basicInfo.ts —— 界面模板、导入解析、AI 提示词共用同一套 */
 export function readJobTarget(doc: ResumeDocument | undefined): string {
-  const data = basicInfoData(doc)
-  const hit = data?.contacts?.find((c) => JOB_LABELS.some((k) => (c.label ?? '').includes(k)))
-  return (hit?.value ?? '').trim()
+  return readJobTargetOf(doc?.sections)
 }
 
 export function readName(doc: ResumeDocument | undefined): string {

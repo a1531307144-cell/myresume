@@ -13,9 +13,9 @@ describe('createDefaultDocument', () => {
     const basic = doc.sections[0]!.data as BasicInfoData
     expect(basic.name).toBe('')
     expect(basic.photo).toBeNull()
-    expect(basic.contacts).toHaveLength(3)
+    expect(basic.contacts).toHaveLength(4)
     expect(basic.contacts.every((c) => c.value === '')).toBe(true)
-    expect(basic.contacts.map((c) => c.label)).toEqual(['电话', '邮箱', '所在地'])
+    expect(basic.contacts.map((c) => c.label)).toEqual(['求职意向', '电话', '邮箱', '所在地'])
 
     const edu = doc.sections[1]!.data as EducationData
     expect(edu.items).toHaveLength(0)

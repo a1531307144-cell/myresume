@@ -2,6 +2,7 @@
 import { computed } from 'vue'
 import type { BasicInfoData, ResumeDocument, SectionType } from '@shared/schema'
 import { isSectionEmpty } from '@shared/sectionDefs'
+import { otherContacts, readJobTarget } from '@shared/basicInfo'
 import { typographyStyle } from '@shared/fonts'
 import TimelineBasicInfo from './sections/TimelineBasicInfo.vue'
 import TimelineEducation from './sections/TimelineEducation.vue'
@@ -55,18 +56,12 @@ function enLabel(title: string, type: SectionType): string {
   return EN_LABEL[type]
 }
 
-const JOB_LABEL = /求职意向|求职方向|意向岗位|目标岗位|应聘岗位/
-
 const basicSection = computed(() => props.doc.sections.find((s) => s.type === 'basicInfo'))
 const basicData = computed<BasicInfoData | null>(() =>
   basicSection.value ? (basicSection.value.data as BasicInfoData) : null
 )
-const jobTarget = computed(
-  () => (basicData.value?.contacts ?? []).find((c) => JOB_LABEL.test(c.label ?? ''))?.value.trim() ?? ''
-)
-const contacts = computed(() =>
-  (basicData.value?.contacts ?? []).filter((c) => c.value.trim() && !JOB_LABEL.test(c.label ?? ''))
-)
+const jobTarget = computed(() => readJobTarget(props.doc.sections))
+const contacts = computed(() => otherContacts(basicData.value?.contacts))
 const contentSections = computed(() =>
   props.doc.sections.filter((s) => s.type !== 'basicInfo' && !isSectionEmpty(s))
 )

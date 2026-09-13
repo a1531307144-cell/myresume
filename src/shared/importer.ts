@@ -1,5 +1,6 @@
 import type { ResumeDocument, SectionType, TemplateId } from './schema'
 import { createSection } from './sectionDefs'
+import { ensureJobTargetSlot } from './basicInfo'
 import { uid } from './id'
 
 /**
@@ -250,7 +251,10 @@ export function buildDocument(parsed: ParsedResume, template: TemplateId): Resum
   basicData.name = parsed.name
   basicData.contacts = parsed.contacts.length
     ? parsed.contacts.map((c) => ({ id: uid(), label: c.label, value: c.value }))
-    : basicData.contacts // 无联系方式时保留三个空槽位
+    : basicData.contacts // 无联系方式时保留空槽位
+  // 保证「求职意向」永远有一行可填：各模板都会把它提到显眼位置，
+  // 若导入结果里没有，用户会看着模板里该出现的位置却无处填写
+  basicData.contacts = ensureJobTargetSlot(basicData.contacts, uid)
   doc.sections.push(basic)
 
   for (const ps of parsed.sections) {
