@@ -1,6 +1,7 @@
 import { reactive, watch } from 'vue'
 import type { AiIssue } from '@shared/aiPrompts'
 import {
+  applyAppend,
   applyGenerate,
   applyRewrite,
   parseDiagnosis,
@@ -24,7 +25,7 @@ import { realRun, runAi, setAiRunnerForTest } from './aiClient'
  * 所有失败路径都保持文档一字未改。
  */
 
-export type AiMode = 'rewrite' | 'generate'
+export type AiMode = 'rewrite' | 'generate' | 'append'
 export type AiStatus = 'idle' | 'streaming' | 'done' | 'error'
 
 export const aiUI = reactive({
@@ -117,9 +118,40 @@ function toPlain<T>(v: T): T {
 
 /** 组装一次 AI 请求。抽出来是为了让自测能用**完全相同的参数**走真实 IPC 验证能否跨进程传递。 */
 function buildRequest(taskId: string, section: Section, doc: ResumeDocument): AiRunRequest {
-  return aiUI.mode === 'generate'
-    ? { taskId, task: 'section-generate', payload: { section, answers: aiUI.answers, doc } }
-    : { taskId, task: 'section-rewrite', payload: { section, instruction: aiUI.instruction, doc } }
+  if (aiUI.mode === 'rewrite') {
+    return { taskId, task: 'section-rewrite', payload: { section, instruction: aiUI.instruction, doc } }
+  }
+  if (aiUI.mode === 'append') {
+    // 追加：把已有内容一并交给模型，并明确要求不得重复
+    return { taskId, task: 'section-append', payload: { section, answers: aiUI.answers, doc } }
+  }
+  return { taskId, task: 'section-generate', payload: { section, answers: aiUI.answers, doc } }
+}
+
+/** 清空上一次的生成结果（切换模式时用） */
+function clearResult(): void {
+  aiUI.status = 'idle'
+  aiUI.streamText = ''
+  aiUI.chars = 0
+  aiUI.error = ''
+  aiUI.groups = null
+  aiUI.rawText = ''
+}
+
+/** 从「改写」切到「再写一条」：板块已有内容时，追加而不是替换 */
+export function startAppend(): void {
+  if (aiUI.status === 'streaming') return
+  aiUI.mode = 'append'
+  aiUI.answers = ''
+  clearResult()
+}
+
+/** 「再写一条」切回「改写」 */
+export function backToRewrite(): void {
+  if (aiUI.status === 'streaming') return
+  aiUI.mode = 'rewrite'
+  aiUI.instruction = ''
+  clearResult()
 }
 
 function fail(message: string): void {
@@ -173,9 +205,10 @@ export async function runAiTask(): Promise<void> {
 
     aiUI.rawText = r.raw ?? ''
     aiUI.profileName = r.profileName ?? ''
-    const expected = aiUI.mode === 'generate' ? null : unitCount(section)
+    // 改写必须与原文条数完全一致；从零写与追加不锁条数
+    const expected = aiUI.mode === 'rewrite' ? unitCount(section) : null
     const groups = parseGroups(aiUI.rawText, expected)
-    if (aiUI.mode === 'generate' && groups.length > 4) {
+    if (aiUI.mode !== 'rewrite' && groups.length > 4) {
       throw new Error('AI 返回的条数过多，已放弃本次修改')
     }
     aiUI.groups = groups
@@ -204,7 +237,7 @@ export function acceptAi(): void {
   // 防御纵深：写回前对最终文本再校验一遍
   let groups: string[][]
   try {
-    groups = parseGroups(aiUI.rawText, aiUI.mode === 'generate' ? null : unitCount(section))
+    groups = parseGroups(aiUI.rawText, aiUI.mode === 'rewrite' ? unitCount(section) : null)
   } catch (err) {
     fail(err instanceof Error ? err.message : 'AI 返回的内容无法使用')
     return
@@ -212,13 +245,24 @@ export function acceptAi(): void {
 
   const mode = aiUI.mode
   try {
-    section.data = mode === 'generate' ? applyGenerate(section, groups) : applyRewrite(section, groups)
+    section.data =
+      mode === 'rewrite'
+        ? applyRewrite(section, groups)
+        : mode === 'append'
+          ? applyAppend(section, groups)
+          : applyGenerate(section, groups)
   } catch (err) {
     fail(err instanceof Error ? err.message : '写入失败')
     return
   }
   closeAi()
-  modalApi.showToast(mode === 'generate' ? '已写入 AI 生成的内容' : '已替换为 AI 改写的版本')
+  modalApi.showToast(
+    mode === 'rewrite'
+      ? '已替换为 AI 改写的版本'
+      : mode === 'append'
+        ? `已在板块末尾追加 ${groups.length} 条`
+        : '已写入 AI 生成的内容'
+  )
 }
 
 // 切换标签即关闭浮层：避免把 A 简历的结果采纳到 B 简历上
@@ -378,6 +422,8 @@ if (import.meta.env.DEV && typeof window !== 'undefined') {
     setAnswers: (s: string) => {
       aiUI.answers = s
     },
+    /** 切到「再写一条」模式 */
+    startAppend: () => startAppend(),
     run: () => runAiTask(),
     accept: () => acceptAi(),
     cancel: () => cancelAi(),

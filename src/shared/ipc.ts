@@ -109,7 +109,7 @@ export interface AiParseResult {
 }
 
 /** AI 任务名：主进程据此选提示词与输入上限 */
-export type AiTaskName = 'parse-resume' | 'section-rewrite' | 'section-generate' | 'diagnose'
+export type AiTaskName = 'parse-resume' | 'section-rewrite' | 'section-generate' | 'section-append' | 'diagnose'
 
 export interface AiRunRequest {
   /** 由渲染层生成，用于把进度/取消精确对应到某一次请求（多个任务可并行而不串台） */

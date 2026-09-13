@@ -2,7 +2,7 @@
 import { computed, onBeforeUnmount } from 'vue'
 import type { SectionType } from '@shared/schema'
 import { activeTab } from '@renderer/stores/tabs'
-import { acceptAi, aiUI, cancelAi, closeAi, runAiTask } from './useAiAssistant'
+import { acceptAi, aiUI, backToRewrite, cancelAi, closeAi, runAiTask, startAppend } from './useAiAssistant'
 
 /** 板块级 AI 助手：左原文、右 AI 新版，采纳前不动文档。 */
 
@@ -40,6 +40,20 @@ const displayStream = computed(() =>
 const streaming = computed(() => aiUI.status === 'streaming')
 const canAccept = computed(() => aiUI.status === 'done' && aiUI.groups !== null)
 
+const MODE_LABEL: Record<string, string> = {
+  rewrite: '润色改写',
+  generate: '从零写',
+  append: '追加一条'
+}
+
+const runLabel = computed(() => {
+  if (streaming.value) return '生成中…'
+  if (aiUI.status === 'done') return '重新生成'
+  return aiUI.mode === 'rewrite' ? '开始润色' : '开始生成'
+})
+
+const acceptLabel = computed(() => (aiUI.mode === 'append' ? '确认追加' : '采纳替换'))
+
 function useQuick(text: string): void {
   aiUI.instruction = text
   void runAiTask()
@@ -55,7 +69,7 @@ onBeforeUnmount(() => {
     <div class="ai-card">
       <header class="ai-head">
         <span class="ai-title">{{ aiUI.sectionTitle }} · AI 助手</span>
-        <span class="ai-mode">{{ aiUI.mode === 'generate' ? '从零写' : '润色改写' }}</span>
+        <span class="ai-mode">{{ MODE_LABEL[aiUI.mode] }}</span>
         <button class="ai-x" title="关闭" @click="closeAi()">✕</button>
       </header>
 
@@ -74,12 +88,18 @@ onBeforeUnmount(() => {
             <button v-for="q in QUICK" :key="q.label" class="ai-chip" :disabled="streaming" @click="useQuick(q.text)">
               {{ q.label }}
             </button>
+            <!-- 已有内容的板块：不替换，而是在末尾再补一条 -->
+            <button class="ai-chip alt" :disabled="streaming" @click="startAppend()">＋ 再写一条</button>
           </div>
         </template>
 
         <template v-else>
           <div class="ai-label">
-            先告诉我这几件事，写多少算多少<span class="ai-hint">留空也能写，但会比较笼统</span>
+            <template v-if="aiUI.mode === 'append'">
+              这一条的情况是？<span class="ai-hint">会在现有内容后面追加，不动你已经写好的</span>
+            </template>
+            <template v-else> 先告诉我这几件事，写多少算多少<span class="ai-hint">留空也能写，但会比较笼统</span> </template>
+            <button v-if="aiUI.mode === 'append'" class="ai-back" @click="backToRewrite()">← 返回改写</button>
           </div>
           <ul class="ai-guide">
             <li v-for="(g, i) in guides" :key="i">{{ g }}</li>
@@ -93,12 +113,7 @@ onBeforeUnmount(() => {
           ></textarea>
         </template>
 
-        <button v-if="aiUI.mode === 'rewrite'" class="ai-run" :disabled="streaming" @click="runAiTask()">
-          {{ streaming ? '生成中…' : aiUI.status === 'done' ? '重新生成' : '开始润色' }}
-        </button>
-        <button v-else class="ai-run" :disabled="streaming" @click="runAiTask()">
-          {{ streaming ? '生成中…' : aiUI.status === 'done' ? '重新生成' : '开始生成' }}
-        </button>
+        <button class="ai-run" :disabled="streaming" @click="runAiTask()">{{ runLabel }}</button>
       </div>
 
       <!-- 对照区 -->
@@ -113,7 +128,8 @@ onBeforeUnmount(() => {
             AI 新版
             <span v-if="streaming" class="pane-meta">生成中 · 已生成 {{ aiUI.chars }} 字</span>
             <span v-else-if="aiUI.status === 'done'" class="pane-meta ok">
-              {{ aiUI.profileName }} · 请对照原文检查后再采纳
+              {{ aiUI.profileName }} ·
+              {{ aiUI.mode === 'append' ? '确认后追加到板块末尾' : '请对照原文检查后再采纳' }}
             </span>
           </div>
 
@@ -145,12 +161,18 @@ onBeforeUnmount(() => {
       </div>
 
       <footer class="ai-foot">
-        <span class="ai-note">AI 只改措辞，时间、单位、职务等事实信息一律照抄</span>
+        <span class="ai-note">
+          {{
+            aiUI.mode === 'append'
+              ? '追加不会改动你已写好的内容；AI 只改措辞，事实信息一律照抄'
+              : 'AI 只改措辞，时间、单位、职务等事实信息一律照抄'
+          }}
+        </span>
         <div class="ai-actions">
           <button class="ai-btn" @click="closeAi()">放弃</button>
           <button v-if="streaming" class="ai-btn danger" @click="cancelAi()">停止生成</button>
           <button v-else class="ai-btn" :disabled="aiUI.status !== 'done'" @click="runAiTask()">重新生成</button>
-          <button class="ai-btn primary" :disabled="!canAccept" @click="acceptAi()">采纳替换</button>
+          <button class="ai-btn primary" :disabled="!canAccept" @click="acceptAi()">{{ acceptLabel }}</button>
         </div>
       </footer>
     </div>
@@ -224,9 +246,34 @@ onBeforeUnmount(() => {
 }
 
 .ai-label {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 4px 8px;
   font-size: 12.5px;
   color: #3c3c50;
   margin-bottom: 7px;
+}
+
+/* 「再写一条」是追加语义，用虚线边框和改写类快捷按钮区分开 */
+.ai-chip.alt {
+  border-style: dashed;
+  border-color: #b9c0ee;
+  background: #f7f8ff;
+  color: #5a63d8;
+}
+
+.ai-back {
+  margin-left: auto;
+  border: none;
+  background: transparent;
+  color: #667eea;
+  font-size: 12px;
+  padding: 0;
+}
+
+.ai-back:hover {
+  text-decoration: underline;
 }
 
 .ai-hint {

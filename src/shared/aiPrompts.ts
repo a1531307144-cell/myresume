@@ -217,6 +217,45 @@ export function buildGenerateSystemPrompt(): string {
   return `${PREAMBLE}\n\n${GENERATE_RULES}`
 }
 
+const APPEND_RULES = `【本次任务】用户要在一个**已经有内容**的板块里**再补一条**（例如又多了一段实习、又一个奖项）。
+你会拿到该板块已经写好的内容，以及用户对新增这一条的回答。
+
+输出规则（必须严格遵守）：
+- 只输出**新增的那一条**，绝不要重复已有内容，也不要复述已有的单位／奖项。
+- 只输出内容本身，不要解释、不要寒暄、不要 Markdown 代码块。
+- 只输出 1 组，以单独一行的 @@1 开头。
+- 信息少就写得概括、稳妥。宁可少写，也绝不编造具体单位、时间、职务或数字。
+- 用户没提供的事实（单位名、时间、职务），对应那一行留空，不要臆造。`
+
+export function buildAppendSystemPrompt(): string {
+  return `${PREAMBLE}\n\n${APPEND_RULES}`
+}
+
+/** 追加模式：必须把已有内容一并给出，并明确要求「不要重复」 */
+export function buildAppendUserPrompt(params: {
+  section: Section
+  answers: string
+  doc: ResumeDocument
+}): string {
+  const { section, answers, doc } = params
+  return [
+    `【求职意向】${readJobTarget(doc) || '（未填写）'}`,
+    `【目标行业】中国大陆法律行业（律所／公司法务／公检法／仲裁）`,
+    '',
+    `【板块】${section.title}（${typeLabel(section.type)}）`,
+    '',
+    '【已经写好的内容 —— 请勿重复，也不要用同样的单位/奖项】',
+    sectionToAiText(section),
+    '',
+    '【用户补充的信息（这是新增那一条的素材）】',
+    answers.trim() || '（用户几乎没提供信息：请写得概括、稳妥，宁可少写也不要编造）',
+    '',
+    '【输出格式】',
+    '只输出新增的 1 条，以 @@1 开头。',
+    generateTypeRule(section.type)
+  ].join('\n')
+}
+
 /** 从零写时，不同板块要求的事实标签行不同 */
 function generateTypeRule(type: SectionType): string {
   switch (type) {
@@ -482,8 +521,38 @@ export function applyGenerate(section: Section, groups: string[][]): SectionData
   }
 }
 
-// ———————————————— 诊断结果 ————————————————
+/**
+ * 追加：把生成的结果**接在原有内容后面**，而不是替换。
+ * 用于「已有板块再补一条」——若用 applyGenerate 会按索引覆盖，把用户已写的内容冲掉。
+ */
+export function applyAppend(section: Section, groups: string[][]): SectionData {
+  const generated = applyGenerate(section, groups)
+  switch (section.type) {
+    case 'experience': {
+      const old = section.data as ExperienceData
+      return { items: [...old.items, ...(generated as ExperienceData).items] } as ExperienceData
+    }
+    case 'education': {
+      const old = section.data as EducationData
+      return { items: [...old.items, ...(generated as EducationData).items] } as EducationData
+    }
+    case 'listBlock': {
+      const old = section.data as ListBlockData
+      return { entries: [...old.entries, ...(generated as ListBlockData).entries] } as ListBlockData
+    }
+    case 'textBlock': {
+      const old = section.data as TextBlockData
+      // 原段落里可能留着空行，追加前清掉，免得简历里凭空多出一段空白
+      return {
+        paragraphs: [...old.paragraphs.filter((p) => p.trim()), ...(generated as TextBlockData).paragraphs]
+      } as TextBlockData
+    }
+    default:
+      throw new Error('这个板块不支持追加')
+  }
+}
 
+// ———————————————— 诊断结果 ————————————————
 export interface AiIssue {
   sectionId: string
   sectionTitle: string

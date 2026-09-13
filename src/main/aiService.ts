@@ -3,6 +3,8 @@ import type { AiProfile, AiRunMeta, AiRunRequest, AiRunResult, AiTaskName } from
 import type { ResumeDocument, Section } from '../shared/schema'
 import { normalizeAiParsed } from '../shared/importer'
 import {
+  buildAppendSystemPrompt,
+  buildAppendUserPrompt,
   buildDiagnoseSystemPrompt,
   buildDiagnoseUserPrompt,
   buildGenerateSystemPrompt,
@@ -97,6 +99,24 @@ const TASK_BUILDERS: Record<AiTaskName, (payload: unknown) => BuiltPrompt> = {
       system: buildGenerateSystemPrompt(),
       user: clipUser(
         buildGenerateUserPrompt({
+          section,
+          answers: typeof p['answers'] === 'string' ? (p['answers'] as string) : '',
+          doc
+        })
+      )
+    }
+  },
+
+  /** 已有板块里「再补一条」：必须把已有内容作为上下文，明确要求不得重复 */
+  'section-append': (payload) => {
+    const p = asRecord(payload)
+    const section = p['section'] as Section | undefined
+    const doc = p['doc'] as ResumeDocument | undefined
+    if (!section || !doc) throw new Error('缺少板块内容')
+    return {
+      system: buildAppendSystemPrompt(),
+      user: clipUser(
+        buildAppendUserPrompt({
           section,
           answers: typeof p['answers'] === 'string' ? (p['answers'] as string) : '',
           doc

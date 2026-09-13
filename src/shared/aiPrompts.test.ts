@@ -1,8 +1,10 @@
 import { describe, expect, it } from 'vitest'
 import type { ResumeDocument, Section } from './schema'
 import {
+  applyAppend,
   applyGenerate,
   applyRewrite,
+  buildAppendUserPrompt,
   condenseResumeForDiagnosis,
   parseDiagnosis,
   parseGroups,
@@ -170,6 +172,86 @@ describe('applyGenerate', () => {
     const ids = out.items.map((i) => i.id)
     expect(new Set(ids).size).toBe(2)
     expect(ids).not.toContain('e1')
+  })
+})
+
+describe('applyAppend（已有板块再补一条）', () => {
+  it('接在原有条目后面，不覆盖已写好的内容', () => {
+    const out = applyAppend(expSection, [
+      ['单位：某某法院', '时间：2025.07-2025.08', '职务：实习生', '协助整理刑事案卷 XXX 份']
+    ]) as { items: { id: string; title: string; date: string; role: string; details: string[] }[] }
+
+    expect(out.items).toHaveLength(3) // 原有 2 条 + 新增 1 条
+    // 前两条原封不动
+    expect(out.items[0]!.title).toBe('某某律师事务所')
+    expect(out.items[0]!.details).toEqual(['协助整理案卷', '旁听庭审'])
+    expect(out.items[1]!.title).toBe('某某法院')
+    // 第 3 条是新增的
+    expect(out.items[2]!.title).toBe('某某法院')
+    expect(out.items[2]!.date).toBe('2025.07-2025.08')
+    expect(out.items[2]!.details).toEqual(['协助整理刑事案卷 XXX 份'])
+    // 新条目有新 id，不会和已有条目撞
+    expect(new Set(out.items.map((i) => i.id)).size).toBe(3)
+  })
+
+  it('教育、列表板块同样是追加而非替换', () => {
+    const edu: Section = {
+      id: 's1',
+      type: 'education',
+      title: '教育背景',
+      data: { items: [{ id: 'e1', school: '某某大学', degree: '法学本科', date: '2021-2025', extras: [] }] }
+    }
+    const eduOut = applyAppend(edu, [['学校：某某中学', '时间：2018-2021']]) as { items: { school: string }[] }
+    expect(eduOut.items.map((i) => i.school)).toEqual(['某某大学', '某某中学'])
+
+    const list: Section = {
+      id: 's2',
+      type: 'listBlock',
+      title: '技能证书',
+      data: { entries: [{ id: 'x', label: '证书', text: '法律职业资格证' }] }
+    }
+    const listOut = applyAppend(list, [['证书：证券从业资格证']]) as { entries: { label: string; text: string }[] }
+    expect(listOut.entries).toHaveLength(2)
+    expect(listOut.entries[1]!.text).toBe('证券从业资格证')
+  })
+
+  it('整段文字：追加一段，并清掉原有的空段', () => {
+    const text: Section = {
+      id: 's3',
+      type: 'textBlock',
+      title: '自我评价',
+      data: { paragraphs: ['已有的第一段', '   '] }
+    }
+    const out = applyAppend(text, [['新增的一段']]) as { paragraphs: string[] }
+    expect(out.paragraphs).toEqual(['已有的第一段', '新增的一段'])
+  })
+
+  it('基本信息不支持追加', () => {
+    const basic: Section = { id: 'b', type: 'basicInfo', title: '基本信息', data: { name: '', photo: null, contacts: [] } }
+    expect(() => applyAppend(basic, [['x']])).toThrow(/不支持/)
+  })
+
+  it('追加不会改动传入的原对象（先算新数据再写回）', () => {
+    const before = JSON.stringify(expSection)
+    applyAppend(expSection, [['单位：新的']])
+    expect(JSON.stringify(expSection)).toBe(before)
+  })
+})
+
+describe('buildAppendUserPrompt', () => {
+  it('把已有内容作为「请勿重复」的上下文交给模型', () => {
+    const d = doc([expSection])
+    const prompt = buildAppendUserPrompt({ section: expSection, answers: '又去法院实习了', doc: d })
+    expect(prompt).toContain('某某律师事务所') // 已有内容在提示词里
+    expect(prompt).toContain('请勿重复')
+    expect(prompt).toContain('又去法院实习了') // 用户补充的素材
+    expect(prompt).toContain('只输出新增的 1 条')
+  })
+
+  it('用户什么都没写时给出稳妥的兜底要求', () => {
+    const d = doc([expSection])
+    const prompt = buildAppendUserPrompt({ section: expSection, answers: '', doc: d })
+    expect(prompt).toContain('宁可少写也不要编造')
   })
 })
 

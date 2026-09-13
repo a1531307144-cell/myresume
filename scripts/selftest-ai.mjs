@@ -19,6 +19,15 @@ const GENERATED = [
 
 const REWRITTEN = ['@@1', '- 整理民事案件卷宗 XXX 份', '- 独立完成证据目录编排与归档'].join('\n')
 
+/** 「再写一条」的假返回：应当是追加，不覆盖已有条目 */
+const APPENDED = [
+  '@@1',
+  '单位：某某人民法院',
+  '时间：2025.07-2025.08',
+  '职务：实习生',
+  '- 协助整理刑事案卷 XXX 份'
+].join('\n')
+
 const DIAGNOSIS = JSON.stringify({
   summary: '整体可用，但成果量化不足',
   issues: [
@@ -110,8 +119,14 @@ async function main() {
   // ———————— 0. 应用就绪 ————————
   // 先整页重载，冲刷掉可能正在进行的 HMR 热更新（否则会在中途重置状态造成假故障）
   await evalJs(`location.reload()`)
-  await sleep(3200)
-  check('应用已挂载', await evalJs(`!!document.querySelector('.app-topbar')`))
+  // 轮询等应用真正挂载，而不是死等固定秒数（紧跟构建之后开发服务器可能正在重启）
+  let mounted = false
+  for (let i = 0; i < 60; i++) {
+    await sleep(500)
+    mounted = await evalJs(`!!document.querySelector('.app-topbar')`)
+    if (mounted) break
+  }
+  check('应用已挂载', mounted === true)
   check('AI 自测钩子可用', Boolean(await evalJs(`typeof window.__mrTestAi === 'object'`)))
 
   // 归一化：关掉遗留的简历标签
@@ -261,6 +276,67 @@ async function main() {
   check('取消后没有报错', s.error === '', s.error)
   check('取消后文档没被改动', (await sectionSnapshot(sid)).items === 1)
   await evalJs(`window.__mrTestAi.close()`)
+
+  // ———————— 5.5 「再写一条」：必须是追加，不能把已写好的冲掉 ————————
+  await evalJs(`window.__mrTestAi.setResult(${JSON.stringify(APPENDED)})`)
+  await evalJs(`window.__mrTestAi.open(${JSON.stringify(sid)})`)
+  await sleep(250)
+  await evalJs(`window.__mrTestAi.startAppend()`)
+  await sleep(250)
+  s = await aiState()
+  check('已切到「追加一条」模式', s.mode === 'append', s.mode)
+
+  const beforeAppend = await sectionSnapshot(sid)
+  await evalJs(`window.__mrTestAi.setAnswers('2025 年暑假在某法院实习，主要整理刑事案卷')`)
+  await evalJs(`window.__mrTestAi.run()`)
+  await sleep(300)
+  s = await aiState()
+  check('追加生成完成', s.status === 'done', `${s.status} ${s.error}`)
+  check('追加模式下生成预览不算写入', (await sectionSnapshot(sid)).items === beforeAppend.items)
+
+  await evalJs(`window.__mrTestAi.accept()`)
+  await sleep(500)
+  const afterAppend = await sectionSnapshot(sid)
+  check(
+    '采纳后条目数 +1（是追加不是替换）',
+    afterAppend.items === beforeAppend.items + 1,
+    `${beforeAppend.items} → ${afterAppend.items}`
+  )
+  check(
+    '原有条目的字段一字未改',
+    afterAppend.values[0] === beforeAppend.values[0] &&
+      afterAppend.values[1] === beforeAppend.values[1] &&
+      afterAppend.values[2] === beforeAppend.values[2],
+    JSON.stringify(afterAppend.values.slice(0, 3))
+  )
+  check(
+    '新增的内容写进了新条目',
+    /法院|刑事/.test((afterAppend.values ?? []).join(' | ')),
+    (afterAppend.values ?? []).join(' | ').slice(0, 90)
+  )
+  await evalJs(`window.__mrTestAi.close()`)
+
+  // ———————— 5.6 可选：用真实模型验一次「再写一条」（REAL_AI=1 才执行） ————————
+  if (process.env.REAL_AI === '1') {
+    await evalJs(`window.__mrTestAi.clearResult()`)
+    await evalJs(`window.__mrTestAi.open(${JSON.stringify(sid)})`)
+    await sleep(250)
+    await evalJs(`window.__mrTestAi.startAppend()`)
+    await evalJs(`window.__mrTestAi.setAnswers('2025 年暑假在某基层法院实习，主要整理刑事案卷、旁听庭审')`)
+    await sleep(200)
+    const beforeReal = await sectionSnapshot(sid)
+    await evalJs(`window.__mrTestAi.run()`)
+    let realAppend = null
+    for (let i = 0; i < 40; i++) {
+      await sleep(1000)
+      realAppend = await aiState()
+      if (realAppend.status === 'done' || realAppend.status === 'error') break
+    }
+    check('真实模型能跑通「再写一条」', realAppend?.status === 'done', `${realAppend?.status} ${realAppend?.error || ''}`)
+    check('真实模型只返回 1 条', Array.isArray(realAppend?.groups) && realAppend.groups.length === 1)
+    check('真实模型也遵守「不覆盖」', (await sectionSnapshot(sid)).items === beforeReal.items)
+    await evalJs(`window.__mrTestAi.close()`)
+  }
 
   // ———————— 6. 全文诊断：幻觉板块 id 必须被丢弃 ————————
   const diagJson = DIAGNOSIS.replace('<SECTION_ID>', sid)
