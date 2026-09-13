@@ -1,6 +1,6 @@
 {
   "name": "myresume",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "我的简历 —— 简单好用的桌面简历编辑器",
   "main": "./out/main/index.js",
   "author": "a1531307144-cell",
